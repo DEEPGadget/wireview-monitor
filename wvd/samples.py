@@ -12,11 +12,14 @@ from . import protocol as P
 TEMP_KEYS = ("in", "out", "ext1", "ext2")
 
 
-def build_sample(seq: int, ts: float, device: str, frame: bytes) -> dict:
+
+def build_sample(seq: int, ts: float, device: str, frame: bytes, gap_s: float | None = None) -> dict:
+    """gap_s: seconds since the previous sample (None for the first one)."""
     reading = P.decode_sensors(frame)
     return {
         "ts": ts,
         "seq": seq,
+        "gap_s": gap_s,
         "device": device,
         **reading,
         "faults": P.fault_names(reading["fault_status"]),
@@ -39,6 +42,7 @@ def flatten(s: dict) -> dict:
         row[f"pin{i}_v"], row[f"pin{i}_a"], row[f"pin{i}_w"] = p["v"], p["a"], p["w"]
     row["fault_status"] = s["fault_status"]
     row["fault_log"] = s["fault_log"]
+    row["gap_s"] = s.get("gap_s")
     return row
 
 
@@ -60,46 +64,98 @@ def _percentile(sorted_vals: list[float], q: float) -> float:
     return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (pos - lo)
 
 
+# Values kept per field for p95; longer windows keep every n-th value.
+P95_KEEP = 200_000
+
+
+class StatsAccumulator:
+    """compute_stats over a window fed chunk by chunk, in constant memory apart
+    from the p95 reservoir. min/max/avg/energy are exact; p95 is exact up to
+    P95_KEEP samples and taken from evenly strided values above that."""
+
+    def __init__(self, expected: int = 0):
+        self.stride = max(1, -(-expected // P95_KEEP))
+        self.count = 0
+        self.first = self.last = None
+        self.n = dict.fromkeys(STAT_FIELDS, 0)
+        self.sum = dict.fromkeys(STAT_FIELDS, 0.0)
+        self.min: dict = dict.fromkeys(STAT_FIELDS)
+        self.max: dict = dict.fromkeys(STAT_FIELDS)
+        self.lastv: dict = dict.fromkeys(STAT_FIELDS)
+        self.keep: dict[str, list] = {f: [] for f in STAT_FIELDS}
+        self.energy_j = 0.0
+        self.gaps = 0
+        self.max_gap_s = 0.0
+        self.seen = 0
+
+    def add(self, samples: list[dict]) -> None:
+        for s in samples:
+            r = flatten(s)
+            keep = self.count % self.stride == 0
+            for f in STAT_FIELDS:
+                v = r[f]
+                if v is None:
+                    continue
+                if self.n[f] == 0 or v < self.min[f]:
+                    self.min[f] = v
+                if self.n[f] == 0 or v > self.max[f]:
+                    self.max[f] = v
+                self.n[f] += 1
+                self.sum[f] += v
+                self.lastv[f] = v
+                if keep:
+                    self.keep[f].append(v)
+            if self.last is not None:
+                dt = r["ts"] - self.last["ts"]
+                self.max_gap_s = max(self.max_gap_s, dt)
+                if dt > GAP_S:
+                    self.gaps += 1
+                else:
+                    self.energy_j += (self.last["total_w"] + r["total_w"]) / 2 * dt
+            else:
+                self.first = r
+            self.seen |= r["fault_status"]
+            self.last = r
+            self.count += 1
+
+    def result(self) -> dict:
+        if not self.count:
+            return {"count": 0, "from": None, "to": None, "duration_s": 0.0, "rate_hz": 0.0,
+                    "energy_wh": 0.0, "gaps": 0, "max_gap_s": 0.0, "faults_seen": [], "fault_log_end": [],
+                    "fields": {}}
+        fields = {}
+        for f in STAT_FIELDS:
+            if not self.n[f]:
+                fields[f] = None
+                continue
+            fields[f] = {
+                "min": self.min[f], "max": self.max[f], "avg": round(self.sum[f] / self.n[f], 6),
+                "p95": round(_percentile(sorted(self.keep[f]) or [self.lastv[f]], 0.95), 6), "last": self.lastv[f],
+            }
+        duration = self.last["ts"] - self.first["ts"]
+        out = {
+            "count": self.count,
+            "from": self.first["ts"],
+            "to": self.last["ts"],
+            "duration_s": round(duration, 3),
+            "rate_hz": round((self.count - 1) / duration, 2) if duration > 0 else 0.0,
+            "energy_wh": round(self.energy_j / 3600, 6),
+            "gaps": self.gaps,
+            "max_gap_s": round(self.max_gap_s, 4),
+            "faults_seen": P.fault_names(self.seen),
+            "fault_log_end": P.fault_names(self.last["fault_log"]),
+            "fields": fields,
+        }
+        if self.stride > 1:
+            out["p95_stride"] = self.stride
+        return out
+
+
 def compute_stats(samples: list[dict]) -> dict:
     """min/max/avg/p95/last per field, energy, faults and gaps over a window."""
-    if not samples:
-        return {"count": 0, "from": None, "to": None, "duration_s": 0.0, "rate_hz": 0.0,
-                "energy_wh": 0.0, "gaps": 0, "faults_seen": [], "fault_log_end": [], "fields": {}}
-    rows = [flatten(s) for s in samples]
-    fields = {}
-    for f in STAT_FIELDS:
-        vals = [r[f] for r in rows if r[f] is not None]
-        if not vals:
-            fields[f] = None
-            continue
-        sv = sorted(vals)
-        fields[f] = {
-            "min": sv[0], "max": sv[-1], "avg": round(sum(vals) / len(vals), 6),
-            "p95": round(_percentile(sv, 0.95), 6), "last": vals[-1],
-        }
-    energy_j, gaps = 0.0, 0
-    for a, b in zip(rows, rows[1:]):
-        dt = b["ts"] - a["ts"]
-        if dt > GAP_S:
-            gaps += 1
-            continue
-        energy_j += (a["total_w"] + b["total_w"]) / 2 * dt
-    seen = 0
-    for r in rows:
-        seen |= r["fault_status"]
-    duration = rows[-1]["ts"] - rows[0]["ts"]
-    return {
-        "count": len(rows),
-        "from": rows[0]["ts"],
-        "to": rows[-1]["ts"],
-        "duration_s": round(duration, 3),
-        "rate_hz": round((len(rows) - 1) / duration, 2) if duration > 0 else 0.0,
-        "energy_wh": round(energy_j / 3600, 6),
-        "gaps": gaps,
-        "faults_seen": P.fault_names(seen),
-        "fault_log_end": P.fault_names(rows[-1]["fault_log"]),
-        "fields": fields,
-    }
+    acc = StatsAccumulator(len(samples))
+    acc.add(samples)
+    return acc.result()
 
 
 def _avg(vals: list) -> float | None:
@@ -150,5 +206,6 @@ def _merge(b: list[dict]) -> dict:
     derived = P.derive(reading)
     # Peak, not average, of the hottest pin: a bucket must not hide a spike.
     derived["max_pin_a"] = max(s["derived"]["max_pin_a"] for s in b)
-    return {"ts": last["ts"], "seq": last["seq"], "device": last["device"], **reading,
+    return {"ts": last["ts"], "seq": last["seq"], "gap_s": max((s.get("gap_s") or 0) for s in b) or None,
+            "device": last["device"], **reading,
             "faults": P.fault_names(status), "derived": derived, "n": len(b)}

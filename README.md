@@ -130,7 +130,7 @@ def test_power_budget(wireview):
 
 | 엔드포인트 | 내용 |
 |---|---|
-| `GET /api/v1/health` | 연결 상태, 마지막 샘플 이후 경과 시간, 실측 Hz, 읽기 카운터 (인증 불필요) |
+| `GET /api/v1/health` | 연결 상태, 수집·기록 스레드 생존 여부, 마지막 샘플 이후 경과 시간, 실측 Hz, 수집 공백, 읽기 카운터 (인증 불필요) |
 | `GET /api/v1/info` | UID, 에디션, 펌웨어 빌드 |
 | `GET /api/v1/limits` | 경고 기준, 폴트 비트 정의 |
 | `GET /api/v1/sensors/latest` | 최신 샘플 |
@@ -145,12 +145,35 @@ def test_power_budget(wireview):
 
 시각은 epoch 초 또는 ISO 8601로, 기간은 `500ms`, `30s`, `5m`, `1h`처럼 씁니다. 전체 스펙은 `/docs`에서 볼 수 있습니다.
 
+- **무거운 조회 제한**: 링 버퍼를 넘는 history, stats, 세션 통계, export는 동시에 2개까지만 실행됩니다. 나머지는 최대 30초 기다린 뒤 `503`(`Retry-After: 5`)을 받습니다. 요청이 몰려도 수집이 받는 영향을 일정하게 묶어 두기 위한 것입니다.
+- **history 잘림 표시**: 한 번에 50만 샘플(50 Hz에서 약 2.8시간)을 넘으면 앞부분만 반환하고 `"truncated": true`를 붙입니다.
+- **export**: 상한 없이 스트리밍합니다. 서버가 바빠서 중간에 끊기면 마지막 줄에 `# export incomplete…`(CSV) 또는 `{"error": …}`(JSONL)를 남깁니다.
+- **세션 통계**: 세션이 끝날 때 한 번 계산해 저장하고, 목록(`GET /api/v1/sessions`)에도 함께 담깁니다. 진행 중인 세션의 통계는 상세 조회에서만 계산합니다.
+
+### health
+
+```json
+{"status": "ok", "connected": true, "sampler_alive": true, "writer_alive": true, "fatal": null,
+ "rate_hz": 50.0, "measured_hz": 50.0, "last_sample_age_s": 0.01, "last_sample_wall": 1791357044.17,
+ "gaps_total": 3, "max_gap_s_5m": 0.12, "last_gap": {"ts": 1791357001.2, "gap_s": 0.12, "seq": 61200},
+ "db_queue": 12, "db_dropped": 0, "stream_dropped": 0, "counters": {"ok": 606124, "loop_errors": 0, …}, …}
+```
+
+- `status`: `ok`, `degraded`(기기 연결 끊김 또는 샘플이 3초 넘게 없음), `down`(수집 또는 DB 기록 스레드가 죽음)
+- `gaps_total`, `max_gap_s_5m`, `last_gap`: 샘플 간격이 주기의 2배를 넘은 횟수, 최근 5분 최대 간격, 마지막 공백. 0.5초 이상이면 `sampler.gap` 이벤트도 기록됩니다.
+- `db_queue`, `db_dropped`: DB 기록 대기 샘플 수, DB에 기록하지 못한 샘플 수(디스크가 5분 넘게 막힌 경우)
+- `stream_dropped`: 느린 스트림 구독자에게 보내지 못하고 버린 메시지 수
+
+### 실시간 스트림의 지연 처리
+
+구독자마다 약 5초분의 큐가 있습니다. 클라이언트가 따라오지 못해 큐가 넘치면, 밀린 메시지를 모두 버리고 `lag` 메시지(`{"ts": …, "dropped": N}`)를 보낸 뒤 최신 샘플부터 다시 보냅니다. 오래된 샘플을 최신 값처럼 받는 일을 막기 위한 것입니다. 수신 측은 `now - sample.ts`로 지연을 확인하는 것이 안전합니다.
+
 ### 샘플 형식
 
 REST, WS/SSE, `wvctl --json` 모두 같은 형식입니다.
 
 ```json
-{"ts": 1791353794.1, "seq": 75, "device": "7D005E001150455441313220",
+{"ts": 1791353794.1, "seq": 75, "gap_s": 0.02, "device": "7D005E001150455441313220",
  "pins": [{"v": 12.281, "a": 0.216, "w": 2.652}, …],
  "total_w": 17.01, "total_a": 1.385, "avg_v": 12.285, "vdd_v": 3.456,
  "temps_c": {"in": 28.8, "out": 29.4, "ext1": 30.2, "ext2": 30.2},
@@ -158,7 +181,8 @@ REST, WS/SSE, `wvctl --json` 모두 같은 형식입니다.
  "derived": {"max_pin_a": 0.256, "pin_imbalance": 1.11, "max_temp_c": 30.2}}
 ```
 
-- `seq`: 샘플마다 1씩 증가하는 번호입니다. 빠진 샘플을 찾을 때 씁니다.
+- `seq`: 읽기에 성공한 샘플마다 1씩 증가하는 번호입니다. 수집이 멈춘 구간에는 샘플이 없을 뿐 번호가 비지 않으므로, 공백은 `gap_s`나 `ts` 간격으로 확인하세요.
+- `gap_s`: 직전 샘플과의 간격(초)입니다. 정상이면 수집 주기와 같습니다(50 Hz에서 0.02). 데몬 시작 후 첫 샘플은 `null`이고, 1.0에서 기록된 샘플도 `null`입니다. CSV에서는 마지막 열입니다.
 - `pin_imbalance`: 가장 큰 핀 전류 ÷ 핀 평균 전류입니다(1.0이면 완전 균형). 총 전류가 1 A 미만이면 `null`입니다.
 - 연결되지 않은 온도 센서의 값은 `null`입니다.
 
@@ -173,7 +197,7 @@ sudo cp packaging/wvd.service /etc/systemd/system/
 sudo systemctl enable --now wvd
 ```
 
-서비스는 별도 사용자(`DynamicUser`)와 `dialout` 그룹으로 실행되고, 데이터는 `/var/lib/wvd`에 저장됩니다. Arch 계열은 서비스 파일의 `SupplementaryGroups`를 `uucp`로 바꾸세요. `scripts/up.sh`로 띄운 서버와 동시에 실행할 수 없습니다.
+서비스는 별도 사용자(`DynamicUser`)와 `dialout` 그룹으로 실행되고, 데이터는 `/var/lib/wvd`에 저장됩니다. 수집 스레드나 DB 기록 스레드가 예외 처리로도 막지 못하고 끝나면 wvd는 종료 코드 70으로 종료하고, systemd가 2초 뒤 다시 시작합니다. 멈춘 값을 계속 내보내는 것보다 안전하기 때문입니다. Arch 계열은 서비스 파일의 `SupplementaryGroups`를 `uucp`로 바꾸세요. `scripts/up.sh`로 띄운 서버와 동시에 실행할 수 없습니다.
 
 ## 네트워크 보안
 
@@ -202,9 +226,9 @@ sudo systemctl enable --now wvd
 ├── wvd/
 │   ├── protocol.py     명령, 프레임 구조, 디코딩
 │   ├── transport.py    시리얼 포트(배타적 열기, 자동 탐지)와 시뮬레이터
-│   ├── sampler.py      샘플링 스레드 (재연결, 명령 큐)
+│   ├── sampler.py      샘플링 스레드 (재연결, 명령 큐, 공백 측정)
 │   ├── samples.py      샘플 형식, 통계, 다운샘플링
-│   ├── store.py        메모리 버퍼, SQLite, 이벤트, 세션 저장
+│   ├── store.py        메모리 버퍼, SQLite 기록 스레드, 이벤트, 세션 저장
 │   ├── events.py       폴트·경고 이벤트 생성
 │   ├── api.py          REST, WebSocket/SSE, /metrics, 인증
 │   ├── daemon.py       wvd 진입점 (옵션 처리)
@@ -226,3 +250,13 @@ sudo systemctl enable --now wvd
 .venv/bin/pytest                                                   # 시뮬레이터로 전체 실행
 WVD_URL=http://127.0.0.1:8765 .venv/bin/pytest tests/test_cli.py   # 실행 중인 데몬(실제 기기)으로 실행
 ```
+
+부하 시험(`tests/wvd_stress.py`, pytest가 수집하지 않음)은 조회 부하를 거는 동안 수집 공백을 측정합니다. 판정 기준은 시험 구간에 저장된 샘플 사이의 최대 간격입니다.
+
+```bash
+.venv/bin/python tests/wvd_stress.py --duration 120                     # 시뮬레이터 + 3시간 분량 DB
+.venv/bin/python tests/wvd_stress.py --workload dashboard                # 대시보드 부하만
+.venv/bin/python tests/wvd_stress.py --url http://127.0.0.1:8765 --duration 600   # 실행 중인 데몬
+```
+
+시험용 장애 주입: `WVD_TEST_FAULT=read-termios:N`(N번째 읽기마다 EIO), `loop-error:N`, `kill:N`(N번째 읽기에서 수집 스레드 종료).

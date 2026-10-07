@@ -378,7 +378,10 @@ async function loadSessions() {
   const { sessions } = await api("/api/v1/sessions?limit=15");
   state.activeSession = sessions.find((s) => s.active) || null;
   renderSessionControl();
-  const details = await Promise.all(sessions.map((s) => api(`/api/v1/sessions/${s.id}`).catch(() => s)));
+  // The list carries each finished session's stored stats. Only a finished
+  // session from before 1.1 (no stats stored yet) costs a detail request, once.
+  const details = await Promise.all(sessions.map((s) =>
+    s.stats || s.active ? s : api(`/api/v1/sessions/${s.id}`).catch(() => s)));
   const tb = $("sessions");
   tb.textContent = "";
   for (const s of details) {
@@ -453,6 +456,9 @@ function connectStream() {
       }
     } else if (msg.kind === "session") {
       loadSessions();
+    } else if (msg.kind === "lag") {
+      // This tab fell behind and the server dropped its backlog: redraw from history.
+      loadHistory();
     }
   };
   ws.onclose = (e) => {

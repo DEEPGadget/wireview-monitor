@@ -6,6 +6,7 @@ import ipaddress
 import logging
 import os
 import sys
+import threading
 
 from .events import Limits
 from .store import default_db_path
@@ -35,7 +36,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit-temp-c", type=_limit, default=80.0, help="temperature warning, C (default 80)")
     p.add_argument("--limit-imbalance", type=_limit, default=1.5, help="pin imbalance warning (default 1.5)")
     p.add_argument("--log-level", default=env("WVD_LOG_LEVEL", "info"))
+    p.add_argument("--test-fault", default=env("WVD_TEST_FAULT"), help=argparse.SUPPRESS)
     return p
+
+
+# After a fatal thread death: time for the graceful shutdown before a hard exit.
+FATAL_EXIT_GRACE_S = 10
+EXIT_FATAL = 70
+
+
+def _fatal_exit(reason: str) -> None:
+    """The sampler or writer thread is gone, so the data would freeze while
+    HTTP keeps answering. Shut down and exit non-zero; systemd
+    (Restart=on-failure) starts a fresh process."""
+    log = logging.getLogger("wvd")
+    log.critical("%s: exiting so the service manager restarts wvd", reason)
+    _fatal_reason.append(reason)
+    t = threading.Timer(FATAL_EXIT_GRACE_S, lambda: os._exit(EXIT_FATAL))
+    t.daemon = True
+    t.start()
+    # Not SIGTERM: uvicorn re-raises it on exit, and systemd counts a SIGTERM
+    # death as clean, so Restart=on-failure would not restart.
+    if _server:
+        _server[0].should_exit = True
+
+
+_fatal_reason: list[str] = []
+_server: list = []
 
 
 def _is_loopback(host: str) -> bool:
@@ -63,13 +90,22 @@ def main(argv: list[str] | None = None) -> None:
     cfg = Config(host=args.host, port=args.port, token=args.token, allow_write=args.allow_write,
                  rate_hz=args.rate, retention_s=parse_duration(args.retention), db_path=args.db,
                  device_port=args.device, simulate=args.simulate,
-                 limits=Limits(args.limit_pin_a, args.limit_total_w, args.limit_temp_c, args.limit_imbalance))
+                 limits=Limits(args.limit_pin_a, args.limit_total_w, args.limit_temp_c, args.limit_imbalance),
+                 test_fault=args.test_fault, on_fatal=_fatal_exit)
+    if args.test_fault:
+        logging.getLogger("wvd").warning("test fault injection on: %s", args.test_fault)
     if open_bind:
         logging.getLogger("wvd").warning("no --token: anyone who can reach %s:%d can read the data", args.host, args.port)
     logging.getLogger("wvd").info("serving on http://%s:%d (db %s, %.0f Hz%s)", cfg.host, cfg.port, cfg.db_path,
                                   cfg.rate_hz, f", simulate={cfg.simulate}" if cfg.simulate else "")
-    uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level=args.log_level.lower(),
-                access_log=False, ws_ping_interval=20)
+    # Open streams would otherwise hold a stop (or a fatal restart) for long.
+    server = uvicorn.Server(uvicorn.Config(
+        create_app(cfg), host=cfg.host, port=cfg.port, log_level=args.log_level.lower(),
+        access_log=False, ws_ping_interval=20, timeout_graceful_shutdown=3))
+    _server.append(server)
+    server.run()
+    if _fatal_reason:
+        sys.exit(EXIT_FATAL)
 
 
 if __name__ == "__main__":
