@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wvd 1.0 기록</title>
+<style>
+  :root {
+    --bg: #fafaf9; --surface: #ffffff; --text: #1c1917; --muted: #57534e;
+    --border: #e7e5e4; --accent: #c2410c; --accent-soft: #fff7ed; --code-bg: #f5f5f4;
+    --ok: #15803d; --ok-soft: #f0fdf4; --bad: #b91c1c; --bad-soft: #fef2f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+      --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+      --ok: #4ade80; --ok-soft: #0f2417; --bad: #f87171; --bad-soft: #2a1212;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+    --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+    --ok: #4ade80; --ok-soft: #0f2417; --bad: #f87171; --bad-soft: #2a1212;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.3rem; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  p, li { color: var(--text); }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  .meta { color: var(--muted); font-size: 0.85rem; }
+  code { font: 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+    padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font: 0.84rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre code { background: none; padding: 0; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 8px 0; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .callout { background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .callout.ok { background: var(--ok-soft); border-color: var(--ok); }
+  .callout.bad { background: var(--bad-soft); border-color: var(--bad); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .card b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  .card span { color: var(--muted); font-size: 0.85rem; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .tag { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted); vertical-align: middle; }
+  nav { margin: 16px 0 0; font-size: 0.9rem; }
+  nav a { color: var(--accent); margin-right: 14px; text-decoration: none; }
+  nav a.here { color: var(--text); font-weight: 600; }
+  .versions { margin: 0 0 8px; font-size: 0.85rem; }
+  .versions a { color: var(--accent); text-decoration: none; margin-right: 10px; }
+  .versions a.here { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<p class="versions">버전 기록: <a href="v1.0.html" class="here">1.0</a><a href="v1.1.html">1.1</a><a href="v1.2.html">1.2</a><a href="design.html">설계안</a></p>
+<h1>wvd 1.0 <span class="tag">v1.0.0 · 7700c09</span></h1>
+<p class="meta">2026-10-07 · 범위: 첫 릴리스(253f4b7, 7700c09)와 서버 <code>cpu</code>에 배포한 내용</p>
+<p class="lede">단일 프로세스 데몬으로 출발한 기준 버전이다. 이 문서는 배포 구성, 50 Hz 운용 시 저장 용량 추정, 그리고 seriesA에서 실제로 써 보며 드러난 문제를 정리한다. 이 문제들이 1.1과 1.2의 작업 범위가 됐다.</p>
+<nav><a href="#arch">구조</a><a href="#deploy">배포</a><a href="#storage">저장 용량</a><a href="#issues">운영 중 문제</a><a href="#stress">부하 시험</a></nav>
+
+<h2 id="arch">구조</h2>
+<p>프로세스 하나가 수집 스레드, SQLite, HTTP 서버를 모두 담는다.</p>
+<pre><code>/dev/ttyACM0 ─ wvd (Python 프로세스 1개, GIL 1개)
+                 ├─ wvd-sampler 스레드: 읽기 → store.add → 0.5초마다 flush → 60초마다 prune → publish
+                 ├─ Store: RLock 1개 + SQLite 연결 1개 + 링 버퍼(900초)
+                 └─ uvicorn: REST · WS/SSE · /metrics · 대시보드 (스레드풀에서 조회·통계·CSV 생성)</code></pre>
+<p>수집 스레드와 API 조회가 <b>같은 잠금</b>과 <b>같은 GIL</b>을 나눠 쓴다. 운영 중 드러난 문제는 대부분 이 구조에서 나왔다.</p>
+
+<h2 id="deploy">배포 구성</h2>
+<div class="table-wrap"><table>
+  <tr><th>항목</th><th>내용</th></tr>
+  <tr><td>설치</td><td><code>/opt/wvd</code> venv에 설치. systemd <code>wvd.service</code>로 등록해 부팅 시 자동 시작(<code>Restart=on-failure</code>).</td></tr>
+  <tr><td>실행 사용자</td><td><code>DynamicUser=yes</code>, <code>SupplementaryGroups=dialout</code></td></tr>
+  <tr><td>데이터</td><td><code>/var/lib/wvd/wvd.db</code> (실제 위치 <code>/var/lib/private/wvd</code>). <code>up.sh</code>로 실행하던 때의 <code>~/.local/share/wvd/wvd.db</code>는 이전하지 않았다.</td></tr>
+  <tr><td>샘플링 속도</td><td>기본 10 Hz에서 50 Hz로 변경. 드롭인 파일 <code>/etc/systemd/system/wvd.service.d/rate.conf</code>에 <code>WVD_RATE=50</code>을 넣었다. 50 Hz에서 손상·실패 0건을 확인했다.</td></tr>
+  <tr><td>네트워크</td><td><code>0.0.0.0:8765</code>, 토큰 없음. 사내 시험용이라 인증은 걸지 않기로 했다.</td></tr>
+  <tr><td>로그</td><td><code>journalctl -u wvd</code></td></tr>
+</table></div>
+
+<h2 id="storage">저장 용량 추정 (50 Hz, 보관 72시간)</h2>
+<p>샘플 하나가 한 행이다. 행에는 seq, 시각, 기기 UID(24 B), 원본 프레임(100 B)이 들어간다. 1분 동안 실측한 결과, 인덱스와 페이지 여유를 포함해 <b>샘플당 약 165 B</b>였다.</p>
+<div class="table-wrap"><table>
+  <tr><th>기간</th><th class="num">50 Hz</th><th class="num">10 Hz</th></tr>
+  <tr><td>1시간</td><td class="num">30 MB</td><td class="num">6 MB</td></tr>
+  <tr><td>1일</td><td class="num">0.71 GB</td><td class="num">0.14 GB</td></tr>
+  <tr><td><b>72시간 (보관 기간, 최종 크기)</b></td><td class="num"><b>≈ 2.1 GB</b></td><td class="num">≈ 0.43 GB</td></tr>
+</table></div>
+<ul>
+  <li><b>파일이 줄지 않는다.</b> VACUUM을 하지 않으므로 지운 공간은 새 샘플이 다시 쓴다. 3일째쯤 최대 크기에 이른 뒤 그 크기를 유지한다.</li>
+  <li><b>세션 구간의 샘플은 보관 기간과 무관하게 계속 남는다.</b> 50 Hz에서 세션 1시간마다 30 MB씩 늘어난다.</li>
+  <li>리뷰에서도 3시간에 93 MB가 쌓였다고 보고했다. 72시간이면 약 2.2 GB로, 위 추정과 같다.</li>
+</ul>
+
+<h2 id="issues">seriesA 사용 중 드러난 문제</h2>
+<p>출처: <code>reviews/wireview-monitor-issues.html</code>. seriesA에서 wvd는 단순 기록기가 아니라 <b>자동 중단(guard)의 유일한 데이터 소스</b>였다. 그래서 수집이 멈추면 guard가 실험을 잘못 중단시키거나, 커넥터 상태를 보지 못하는 구간이 생긴다.</p>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>문제</th><th>원인 (코드에서 확인)</th></tr>
+  <tr><td>C1</td><td>USB 재연결 때 수집 스레드가 죽는다. HTTP는 마지막 값을 최신 값처럼 계속 응답한다.</td><td><code>termios.error</code>는 <code>OSError</code>의 하위 클래스가 아니다(<code>issubclass</code> 결과 False). 그래서 <code>except (OSError, DeviceError)</code>를 빠져나간다.</td></tr>
+  <tr><td>C2</td><td>DB 조회 중 수집이 1.5~4.5초 멈춰 guard가 2회 잘못 중단시켰다.</td><td><code>Store.range()</code>와 <code>after_seq()</code>가 잠금을 잡은 채 flush와 <code>fetchall</code>을 한다. 수집 쪽의 <code>next_seq()</code>와 <code>add()</code>도 같은 잠금을 기다린다.</td></tr>
+  <tr><td>C3</td><td>세션 종료와 대시보드 세션 목록이 C2를 일으킨다.</td><td>세션 이벤트가 올 때마다 대시보드가 세션 15개의 전체 구간 통계를 다시 요청한다.</td></tr>
+  <tr><td>C4</td><td>멈춘 구간의 측정값은 영구히 사라진다.</td><td>기기에 버퍼가 없고, 수집 루프는 밀리면 따라잡지 않는다. 또 seq는 읽기에 성공할 때만 늘어서 <b>seq만 봐서는 공백이 보이지 않는다</b>.</td></tr>
+  <tr><td>E1</td><td>GIL 경합</td><td>수집과 API가 한 프로세스 안에 있다.</td></tr>
+  <tr><td>E2</td><td>수집 스레드가 DB 기록과 prune까지 직접 한다.</td><td>디스크 지연이 그대로 수집 정지로 이어진다.</td></tr>
+  <tr><td>E3</td><td>내보내기가 50만 샘플(2.8시간)에서 아무 표시 없이 잘린다.</td><td><code>LIMIT 500000</code>. CSV 전체를 메모리에서 만든다.</td></tr>
+  <tr><td>E4</td><td>스트림 큐가 40초분이라 느린 구독자는 오래된 데이터를 받는다.</td><td>큐 2000개. 넘칠 때 오래된 것 하나만 버린다.</td></tr>
+  <tr><td>E5</td><td>health가 스레드 사망을 드러내지 않는다.</td><td>스레드가 죽어도 <code>connected: true</code>로 나온다.</td></tr>
+  <tr><td>E6</td><td>인증 없이 열려 있다.</td><td>무거운 요청 하나로 C2를 일으킬 수 있다.</td></tr>
+  <tr><td>E7</td><td>DB 크기, 세션 구간 무기한 보관</td><td>위 저장 용량 추정 참고</td></tr>
+</table></div>
+
+<h2 id="stress">부하 시험 (1.1 작업 중 같은 조건으로 측정)</h2>
+<p>조건: 시뮬레이터 50 Hz, 3시간 분량 DB와 3시간 세션, 60초. 판정 기준은 시험 구간에 저장된 샘플 사이의 최대 간격이다.</p>
+<div class="table-wrap"><table>
+  <tr><th>부하</th><th class="num">최대 공백</th><th class="num">수집 샘플</th><th>비고</th></tr>
+  <tr><td>대시보드 부하 (세션 갱신, 세션 시작·종료, SSE 5개)</td><td class="num bad">10.9 s</td><td class="num">66 / 3043</td><td></td></tr>
+  <tr><td>리뷰 6장 기준 (위 부하 + 1시간 구간 history·stats·export 반복)</td><td class="num bad">26.5 s</td><td class="num">2 / 3287</td><td><code>/health</code>도 응답하지 않았고, SIGTERM에도 15초 안에 종료되지 않았다.</td></tr>
+</table></div>
+<div class="callout bad">1.0은 조회 부하가 걸리면 수집이 사실상 멈춘다. guard의 데이터 소스로 쓰기에는 맞지 않는다.</div>
+</main>
+</body>
+</html>

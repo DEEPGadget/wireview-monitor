@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wvd 1.1 기록</title>
+<style>
+  :root {
+    --bg: #fafaf9; --surface: #ffffff; --text: #1c1917; --muted: #57534e;
+    --border: #e7e5e4; --accent: #c2410c; --accent-soft: #fff7ed; --code-bg: #f5f5f4;
+    --ok: #15803d; --ok-soft: #f0fdf4; --bad: #b91c1c; --bad-soft: #fef2f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+      --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+      --ok: #4ade80; --ok-soft: #0f2417; --bad: #f87171; --bad-soft: #2a1212;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+    --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+    --ok: #4ade80; --ok-soft: #0f2417; --bad: #f87171; --bad-soft: #2a1212;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.3rem; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  p, li { color: var(--text); }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  .meta { color: var(--muted); font-size: 0.85rem; }
+  code { font: 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+    padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font: 0.84rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre code { background: none; padding: 0; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 8px 0; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .callout { background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .callout.ok { background: var(--ok-soft); border-color: var(--ok); }
+  .callout.bad { background: var(--bad-soft); border-color: var(--bad); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .card b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  .card span { color: var(--muted); font-size: 0.85rem; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .tag { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted); vertical-align: middle; }
+  nav { margin: 16px 0 0; font-size: 0.9rem; }
+  nav a { color: var(--accent); margin-right: 14px; text-decoration: none; }
+  nav a.here { color: var(--text); font-weight: 600; }
+  .versions { margin: 0 0 8px; font-size: 0.85rem; }
+  .versions a { color: var(--accent); text-decoration: none; margin-right: 10px; }
+  .versions a.here { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<p class="versions">버전 기록: <a href="v1.0.html">1.0</a><a href="v1.1.html" class="here">1.1</a><a href="v1.2.html">1.2</a><a href="design.html">설계안</a></p>
+<h1>wvd 1.1 <span class="tag">v1.1.0 · 8a2b23b</span></h1>
+<p class="meta">2026-10-07 · 범위: 1.0 리뷰의 C1–C4, E2–E6 수정 · 배포는 1.2와 함께</p>
+<p class="lede">프로세스 하나는 그대로 둔 채, 수집 경로가 어떤 잠금도 기다리지 않게 바꿨다. 1.0의 초 단위 정지는 사라졌지만 목표인 100 ms는 맞추지 못했다. 남은 원인이 GIL(E1)임을 측정으로 확인했고, 그래서 1.2에서 프로세스를 분리하게 됐다.</p>
+<nav><a href="#decisions">결정 사항</a><a href="#changes">변경 내용</a><a href="#api">API 변화</a><a href="#verify">검증</a><a href="#gil">GIL 분석</a></nav>
+
+<h2 id="decisions">결정 사항</h2>
+<div class="table-wrap"><table>
+  <tr><th>질문</th><th>결정</th></tr>
+  <tr><td>프로세스 분리(E1)를 1.1에 넣을지</td><td>1.2로 미룬다. 부하 시험에서 100 ms를 못 맞추면 그때 분리한다. <span class="bad">→ 못 맞춰서 1.2에서 분리했다.</span></td></tr>
+  <tr><td>샘플에 <code>gap_s</code> 필드 추가</td><td>추가한다. 필드만 늘어나므로 기존 클라이언트는 영향이 없다.</td></tr>
+  <tr><td>수집 스레드가 그래도 죽으면</td><td>프로세스를 종료 코드 70으로 끝내서 systemd가 재시작하게 한다.</td></tr>
+  <tr><td>접근 제한 (E6)</td><td>인증 없음(사내 시험용). 대신 무거운 조회만 동시에 2개로 제한하고, 30초 기다린 뒤 503을 준다.</td></tr>
+  <tr><td>버전·git</td><td>7700c09에 <code>v1.0.0</code> 태그를 붙이고, <code>v1.1</code> 브랜치에서 작업한다. 패키지 버전은 1.1.0.</td></tr>
+</table></div>
+
+<h2 id="changes">변경 내용</h2>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>수정</th></tr>
+  <tr><td>C1</td><td>읽기에서 나는 모든 예외를 잡아 연결을 끊고 재연결한다(<code>termios.error</code> 포함). 루프 전체도 <code>except Exception</code>으로 한 번 더 감싼다. 그래도 스레드가 끝나면 종료 코드 70으로 끝낸다. 처음 구현은 SIGTERM을 썼는데, systemd가 SIGTERM 종료를 정상 종료로 봐서 재시작하지 않았다. 그래서 <code>server.should_exit</code> 방식으로 바꿨다.</td></tr>
+  <tr><td>C2, E2</td><td>
+    <ul>
+      <li>수집 스레드는 읽기 → seq 부여 → 큐 → 게시만 한다. 잠금은 쓰지 않는다.</li>
+      <li><b>writer 스레드</b>가 0.5초 단위로 묶어 기록하고, prune은 5천 행씩 짧은 트랜잭션으로 나눠 지운다.</li>
+      <li>조회는 스레드마다 별도 SQLite 연결로 한다(WAL). 아직 기록되지 않은 구간은 링 버퍼에서 합쳐 넣는다.</li>
+      <li>디스크가 5분 넘게 막히면 DB 기록분만 버리고 개수를 센다(<code>db_dropped</code>). 수집은 계속된다.</li>
+    </ul></td></tr>
+  <tr><td>C3</td><td>끝난 세션의 통계는 한 번만 계산해 <code>sessions.stats</code>에 저장한다. 세션 목록에 이 통계가 함께 담겨서, 대시보드는 목록 1건만 조회한다. 1.0은 1+15건을 조회했다.</td></tr>
+  <tr><td>C4</td><td>모든 샘플에 직전 샘플과의 간격 <code>gap_s</code>를 넣는다. 주기의 2배를 넘으면 공백으로 센다. 0.5초 이상이면 <code>sampler.gap</code> 이벤트도 남긴다.</td></tr>
+  <tr><td>E3</td><td>export는 1만 행씩 스트리밍하고 상한이 없다. history가 잘리면 <code>"truncated": true</code>를 붙인다. 통계는 한 번 훑어서 계산한다. 20만 샘플이 넘으면 p95는 일정 간격으로 뽑은 값에서 구한다(<code>p95_stride</code>).</td></tr>
+  <tr><td>E4</td><td>구독자 큐를 약 5초분으로 줄였다. 넘치면 밀린 것을 모두 버리고 <code>lag</code> 메시지를 보낸다. SSE 연결 확인은 1초에 한 번만 한다.</td></tr>
+  <tr><td>E5</td><td>health에 스레드 생존 여부, 공백 통계, DB 큐 상태를 추가했다. 스레드가 죽으면 <code>status: down</code>이 된다.</td></tr>
+  <tr><td>E6</td><td>무거운 조회는 동시에 최대 2개. 나머지는 30초 기다린 뒤 503(<code>Retry-After: 5</code>)을 받는다.</td></tr>
+  <tr><td>기타</td><td>
+    <ul>
+      <li>history 응답을 500개 단위로 나눠 직렬화한다. 한 번에 하면 <code>json.dumps</code>가 2만 샘플에 GIL을 160 ms 동안 잡고, FastAPI의 기본 변환에도 1초가 걸린다.</li>
+      <li>종료 시 대기를 3초로 제한했다.</li>
+      <li>부하 시험 <code>tests/wvd_stress.py</code>와 장애 주입 <code>WVD_TEST_FAULT</code>를 추가했다.</li>
+    </ul></td></tr>
+</table></div>
+
+<h2 id="api">API 변화</h2>
+<ul>
+  <li><b>샘플</b>: <code>gap_s</code> 필드 추가. CSV에서는 마지막 열이다.</li>
+  <li><b><code>/sensors/latest</code></b>: <code>age_s</code> 추가</li>
+  <li><b>health</b>: <code>sampler_alive</code>, <code>writer_alive</code>, <code>fatal</code>, <code>last_sample_wall</code>, <code>gaps_total</code>, <code>max_gap_s_5m</code>, <code>last_gap</code>, <code>db_queue</code>, <code>db_dropped</code>, <code>stream_dropped</code> 추가. <code>status</code>에 <code>down</code> 추가.</li>
+  <li><b>스트림</b>: <code>lag</code> 메시지 <code>{"ts", "dropped"}</code></li>
+  <li><b>이벤트</b>: <code>sampler.gap</code></li>
+  <li><b>응답</b>: <code>503 busy</code>, history의 <code>truncated</code>, 통계의 <code>max_gap_s</code>와 <code>p95_stride</code></li>
+</ul>
+
+<h2 id="verify">검증</h2>
+<p>테스트 36개 통과. 1.0의 25개에 다음 11개를 더했다: termios 예외 재연결, 루프 예외 생존과 공백 이벤트, 스레드 사망 감지, DB 지연 중 수집 지속, 미기록 구간 합치기, 잘림 표시, export 스트리밍, 동시 실행 제한, 세션 통계 저장, lag 메시지, 통계 누적 계산. 실제 프로세스에서 수집 스레드가 죽으면 0.13초 뒤 종료 코드 70으로 끝나는 것도 확인했다.</p>
+<p>부하 시험(시뮬레이터 50 Hz, 3시간 DB, 60초):</p>
+<div class="table-wrap"><table>
+  <tr><th>부하</th><th class="num">1.0 최대 공백</th><th class="num">1.1 최대 공백</th><th class="num">1.1 수집률</th></tr>
+  <tr><td>부하 없음</td><td class="num">–</td><td class="num ok">21 ms</td><td class="num">100%</td></tr>
+  <tr><td>대시보드 부하</td><td class="num bad">10.9 s</td><td class="num bad">0.26 s</td><td class="num">82%</td></tr>
+  <tr><td>리뷰 6장 기준</td><td class="num bad">26.5 s</td><td class="num bad">0.33–0.38 s</td><td class="num">73%</td></tr>
+</table></div>
+<div class="callout bad">초 단위 정지는 사라지고, 1.1은 부하 중에도 응답하며 몰린 요청을 503으로 돌려보낸다. 하지만 무거운 조회가 <b>하나만</b> 돌아도 0.2~0.4초 공백이 생겨 기준(100 ms 미만)을 통과하지 못했다.</div>
+
+<h2 id="gil">GIL 분석과 시도한 완화책</h2>
+<p>py-spy로 측정해 보니, 무거운 조회 중에는 GIL이 전체 시간의 <b>90%</b> 동안 잡혀 있었다. 잡고 있는 코드는 대부분 순수 Python이다: 프레임 디코딩 36%, 통계 누적 21%, flatten 11%. 즉 C 코드가 한 번에 오래 잡는 문제가 아니라, 무거운 스레드 여럿이 GIL을 계속 나눠 차지하는 구조적인 경합이다.</p>
+<div class="table-wrap"><table>
+  <tr><th>시도</th><th>결과</th><th>조치</th></tr>
+  <tr><td>GIL 전환 간격 단축 (<code>sys.setswitchinterval</code> 1 ms, 0.5 ms)</td><td>0.30–0.34 s, 효과 없음</td><td>되돌림</td></tr>
+  <tr><td>GC 임계값 상향 (gen2 GC가 매번 50–100 ms를 쓰면서 회수량은 0)</td><td>수집률 77% → 95%, 최대 공백은 0.2–0.4 s 그대로</td><td>되돌림</td></tr>
+  <tr><td>JSON·CSV를 500개 단위로 나눠 직렬화</td><td>GIL을 한 번에 160 ms 잡는 일이 사라짐</td><td><span class="ok">반영</span></td></tr>
+  <tr><td>무거운 작업이 250개마다 GIL을 양보 (<code>time.sleep(0)</code>)</td><td><span class="bad">0.52 s로 악화</span>. 양보한 GIL을 다른 무거운 스레드가 가져간다.</td><td>되돌림</td></tr>
+</table></div>
+<div class="callout">결론: 프로세스 안에서는 수집 스레드에 GIL 우선권을 줄 방법이 없다. 100 ms를 보장하려면 수집을 다른 프로세스로 떼어내야 한다. → <a href="v1.2.html">1.2</a></div>
+</main>
+</body>
+</html>

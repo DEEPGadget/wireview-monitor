@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wvd 1.2 기록</title>
+<style>
+  :root {
+    --bg: #fafaf9; --surface: #ffffff; --text: #1c1917; --muted: #57534e;
+    --border: #e7e5e4; --accent: #c2410c; --accent-soft: #fff7ed; --code-bg: #f5f5f4;
+    --ok: #15803d; --ok-soft: #f0fdf4; --bad: #b91c1c; --bad-soft: #fef2f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+      --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+      --ok: #4ade80; --ok-soft: #0f2417; --bad: #f87171; --bad-soft: #2a1212;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+    --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+    --ok: #4ade80; --ok-soft: #0f2417; --bad: #f87171; --bad-soft: #2a1212;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.3rem; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  p, li { color: var(--text); }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  .meta { color: var(--muted); font-size: 0.85rem; }
+  code { font: 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+    padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font: 0.84rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre code { background: none; padding: 0; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 8px 0; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .callout { background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .callout.ok { background: var(--ok-soft); border-color: var(--ok); }
+  .callout.bad { background: var(--bad-soft); border-color: var(--bad); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .card b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  .card span { color: var(--muted); font-size: 0.85rem; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .tag { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted); vertical-align: middle; }
+  nav { margin: 16px 0 0; font-size: 0.9rem; }
+  nav a { color: var(--accent); margin-right: 14px; text-decoration: none; }
+  nav a.here { color: var(--text); font-weight: 600; }
+  .versions { margin: 0 0 8px; font-size: 0.85rem; }
+  .versions a { color: var(--accent); text-decoration: none; margin-right: 10px; }
+  .versions a.here { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<p class="versions">버전 기록: <a href="v1.0.html">1.0</a><a href="v1.1.html">1.1</a><a href="v1.2.html" class="here">1.2</a><a href="design.html">설계안</a></p>
+<h1>wvd 1.2 <span class="tag">v1.2.0 · 0f3f487 · 배포됨</span></h1>
+<p class="meta">2026-10-07 · 범위: E1(GIL) 해결을 위한 3 프로세스 분리 · 21:30에 1.1과 함께 서버 <code>cpu</code>에 배포</p>
+<p class="lede">수집, 무거운 조회, 실시간 전달을 서로 다른 프로세스로 나눴다. 프로세스마다 GIL이 따로라서 어느 한쪽 부하가 다른 쪽을 늦추지 못한다. 모든 부하 조건에서 저장 샘플 사이 최대 공백은 수집 주기(20 ms) 그대로였다.</p>
+<nav><a href="#results">결과 요약</a><a href="#decisions">결정 사항</a><a href="#arch">구조</a><a href="#restart">장애와 재시작</a><a href="#api">API 변화</a><a href="#verify">검증</a><a href="#deploy">배포 기록</a><a href="#seriesa">seriesA 참고</a><a href="#todo">남은 일</a></nav>
+
+<h2 id="results">결과 요약</h2>
+<div class="grid">
+  <div class="card"><b class="ok">20.2 ms</b><span>최대 공백 (10분, 리뷰 6장 기준 부하, 시뮬레이터)</span></div>
+  <div class="card"><b class="ok">20.9 ms</b><span>최대 공백 (2분, 실제 기기, 배포 후)</span></div>
+  <div class="card"><b class="ok">100%</b><span>수집률 (30,193 / 30,193)</span></div>
+  <div class="card"><b class="ok">17.7 ms</b><span>SSE 전달 지연 최대값</span></div>
+</div>
+<div class="table-wrap"><table>
+  <tr><th>리뷰 6장 기준 부하</th><th class="num">1.0</th><th class="num">1.1</th><th class="num">1.2</th></tr>
+  <tr><td>저장 샘플 최대 공백</td><td class="num bad">26.5 s</td><td class="num bad">0.38 s</td><td class="num ok">20.2 ms</td></tr>
+  <tr><td>수집률</td><td class="num bad">0.1%</td><td class="num bad">73%</td><td class="num ok">100%</td></tr>
+  <tr><td>실시간 스트림 전달 지연</td><td class="num">응답 없음</td><td class="num">수백 ms</td><td class="num ok">≤ 17.7 ms</td></tr>
+  <tr><td>DB 기록 누락</td><td class="num">–</td><td class="num">0</td><td class="num ok">0</td></tr>
+</table></div>
+
+<h2 id="decisions">결정 사항</h2>
+<div class="table-wrap"><table>
+  <tr><th>질문</th><th>검토한 안</th><th>결정</th></tr>
+  <tr><td>분리 방식</td><td>A: recorder + API (2개) · B: 무거운 조회만 작업자 프로세스로 · 3 프로세스</td><td><b>3 프로세스.</b> A안에서는 무거운 조회 중에 실시간 스트림이 수백 ms 늦어진다. B안은 100 ms를 보장하지 못한다. seriesA guard가 스트림으로 판단하므로 스트림까지 떼어 놓는다.</td></tr>
+  <tr><td>프로세스 관리</td><td><code>wvd</code>가 직접 감시 · systemd 유닛 3개</td><td><b><code>wvd</code>가 직접 감시.</b> 설치 방법, 유닛, <code>up.sh</code>가 그대로이다. 유닛 3개로 하면 DynamicUser로 DB를 나눠 쓰기 어렵다.</td></tr>
+  <tr><td>자식이 죽었을 때</td><td>부모가 다시 띄움 · 전체 재시작</td><td><b>1초 뒤 다시 띄운다.</b> 60초에 5번 넘게 죽으면 종료 코드 70 → systemd 재시작</td></tr>
+  <tr><td>외부 포트</td><td>front 프록시로 하나 유지 · 조회 API 별도 포트</td><td><b>8765 하나 유지</b> (front가 api로 요청을 넘긴다)</td></tr>
+  <tr><td>배포</td><td>1.1 먼저 · 1.2 완료 후 한 번에</td><td><b>1.2 완료 후 한 번에.</b> seriesA는 배포 후 진행</td></tr>
+</table></div>
+
+<h2 id="arch">구조</h2>
+<pre><code>                 ┌──────────── :8765 (외부에 보이는 포트는 하나) ────────────┐
+ 브라우저·guard ─▶│ front: 대시보드 · WS/SSE · latest · health · /metrics · 인증 │
+                  │        나머지 /api/* 요청 → api로 전달 (Unix 소켓)          │
+                  └───────▲──────────────────────────────┬─────────────────────┘
+                          │ 실시간 피드 (NDJSON)         │
+ /dev/ttyACM0 ─ recorder ─┴─ 피드 배포 ───────────────▶ api: history · stats · export · 세션
+                 수집 · 이벤트 판정 · writer → SQLite ◀─ 읽기 (WAL), 세션 쓰기
+                 ◀─ 제어 소켓: 폴트 해제, 세션 변경 알림 ─ api
+
+ wvd (supervisor): 세 프로세스를 띄우고 감시 · procs.json 기록 · 자식은 PR_SET_PDEATHSIG</code></pre>
+<div class="table-wrap"><table>
+  <tr><th>프로세스</th><th>스레드·역할</th><th>다른 쪽이 바쁠 때</th></tr>
+  <tr><td><b>recorder</b><br><code>wvd/recorder.py</code></td><td>수집, writer, 구독자별 전송 스레드, 제어, 1초마다 상태 발행. 디코딩이나 통계 같은 무거운 일은 하지 않는다.</td><td>구독자가 느리면 그 구독자에게 보낼 실시간분만 버린다(<code>feed_dropped</code>). DB에는 빠짐없이 기록한다.</td></tr>
+  <tr><td><b>front</b><br><code>wvd/front.py</code></td><td>asyncio만 쓴다. 피드에서 받은 메시지를 다시 인코딩하지 않고 WS로 그대로 보낸다. SSE용 변환은 메시지당 한 번만 한다.</td><td>무거운 조회가 front에 들어오지 않는다.</td></tr>
+  <tr><td><b>api</b><br><code>wvd/api.py</code></td><td>조회, 세션, export. 피드로 채운 링 버퍼로 아직 기록되지 않은 구간까지 조회한다.</td><td>무겁게 돌아도 수집과 스트림에 영향이 없다. 동시 실행 제한(2개)은 그대로 유지한다.</td></tr>
+  <tr><td><b>supervisor</b><br><code>wvd/daemon.py</code></td><td>recorder → api → front 순서로 띄우고, 각자 소켓이 준비될 때까지 기다린다. 종료는 반대 순서로 해서 recorder가 마지막에 남은 기록을 마무리한다.</td><td>–</td></tr>
+</table></div>
+<p>프로세스 사이 통신(<code>wvd/bus.py</code>)은 비공개 디렉터리(<code>/run/wvd</code>, 권한 0700)의 Unix 소켓 세 개로 한다.</p>
+<ul>
+  <li><code>feed.sock</code>: recorder → 구독자 방송</li>
+  <li><code>control.sock</code>: 요청 한 줄에 응답 한 줄</li>
+  <li><code>api.sock</code>: api의 HTTP</li>
+</ul>
+<p>인증은 front에서만 검사한다. api 소켓은 외부에서 접근할 수 없다.</p>
+
+<h2 id="restart">장애와 재시작</h2>
+<div class="table-wrap"><table>
+  <tr><th>상황</th><th>동작</th><th>확인 방법</th></tr>
+  <tr><td>USB 오류(EIO)</td><td>recorder 안에서 연결을 끊고 재연결한다. 프로세스는 재시작하지 않는다.</td><td>테스트: <code>read-termios:25</code></td></tr>
+  <tr><td>수집 스레드 사망</td><td>recorder가 종료 코드 70으로 끝나고, supervisor가 1초 뒤 다시 띄운다. API와 대시보드 연결은 유지된다.</td><td>테스트: <code>kill:100</code>. health가 즉시 <code>down</code> → 다시 <code>ok</code></td></tr>
+  <tr><td>api 또는 front 강제 종료</td><td>1초 뒤 다시 띄운다. recorder는 계속 수집한다(공백 0).</td><td>테스트: SIGKILL 후 <code>gaps_total == 0</code></td></tr>
+  <tr><td>연속 재시작</td><td>60초에 5번 넘으면 <code>wvd</code>가 종료 코드 70으로 끝난다. 그다음은 systemd가 맡는다.</td><td>테스트: <code>kill:5</code> → 종료 코드 70</td></tr>
+  <tr><td>supervisor 강제 종료</td><td>자식이 모두 종료되어 시리얼 포트가 풀린다.</td><td>테스트: SIGKILL 후 자식 pid가 모두 사라짐</td></tr>
+  <tr><td>DB 지연</td><td>수집은 계속된다. api는 아직 기록되지 않은 구간을 링 버퍼에서 응답한다.</td><td>테스트: <code>db-slow:1.5</code>, 최대 공백 0.3 s 미만</td></tr>
+</table></div>
+<p><b>seq와 이벤트 id는 재시작해도 겹치지 않는다.</b> writer가 <code>meta</code> 테이블에 상한값(2분분 여유)을 기록하고, 새 recorder는 그 위에서 번호를 시작한다. 따라서 recorder가 재시작되면 seq가 앞으로 건너뛴다. 멈췄던 구간은 첫 샘플의 <code>gap_s</code>와 <code>sampler.gap</code> 이벤트로 드러난다.</p>
+
+<h2 id="api">API 변화 (1.1 대비)</h2>
+<ul>
+  <li><b>health 추가 항목</b>
+    <ul>
+      <li><code>processes</code>: 프로세스별 pid, 재시작 횟수, 마지막 종료 코드</li>
+      <li><code>api_ok</code>, <code>recorder_status_age_s</code>, <code>feed_connected</code>, <code>feed_dropped</code></li>
+    </ul></li>
+  <li><b><code>status</code> 판정</b>
+    <ul>
+      <li><code>down</code>: recorder가 없거나 재시작 중일 때. 피드 연결이 끊기는 순간 바로 판정한다.</li>
+      <li><code>degraded</code>: api가 응답하지 않을 때도 포함된다.</li>
+    </ul></li>
+  <li><b><code>/metrics</code></b>: <code>wvd_process_restarts_total{process=…}</code> 추가</li>
+  <li><b>바뀌지 않은 것</b>: 샘플 형식, 엔드포인트 경로, CLI, Python 클라이언트, 대시보드</li>
+</ul>
+
+<h2 id="verify">검증</h2>
+<p>테스트 42개 모두 통과했다(약 35초). 통합 테스트는 실제 <code>wvd</code>(프로세스 4개)를 띄워서 하고, api 단위 테스트는 미리 채운 DB로 한다. 1.1 이후 추가한 항목은 다음과 같다.</p>
+<ul>
+  <li>WS로 세션 변경 알림이 전달되는 경로(api → recorder 피드 → front → 클라이언트)</li>
+  <li>프록시를 거친 문서와 인증</li>
+  <li>재시작 시나리오 6종 (위 표)</li>
+  <li>강제 종료로 미기록 seq가 남아도 재사용되지 않음</li>
+</ul>
+<div class="table-wrap"><table>
+  <tr><th>부하 시험</th><th class="num">최대 공백</th><th class="num">수집률</th><th class="num">SSE 지연 최대</th></tr>
+  <tr><td>시뮬레이터 · 리뷰 6장 기준 · 60초</td><td class="num ok">20.1 ms</td><td class="num">3034 / 3034</td><td class="num">3.0 ms</td></tr>
+  <tr><td>시뮬레이터 · 대시보드 부하 · 60초</td><td class="num ok">20.1 ms</td><td class="num">3035 / 3035</td><td class="num">13.9 ms</td></tr>
+  <tr><td>시뮬레이터 · 부하 없음 · 60초</td><td class="num ok">20.3 ms</td><td class="num">3005 / 3005</td><td class="num">1.1 ms</td></tr>
+  <tr><td><b>시뮬레이터 · 리뷰 6장 기준 · 10분</b></td><td class="num ok">20.2 ms</td><td class="num">30193 / 30193</td><td class="num">17.7 ms</td></tr>
+  <tr><td><b>실제 기기 (운영 서비스) · 리뷰 6장 기준 · 2분</b></td><td class="num ok">20.9 ms</td><td class="num">6053 / 6053</td><td class="num">5.2 ms</td></tr>
+</table></div>
+<p>10분 시험 동안 history 47회, stats 48회, 대시보드 세션 갱신 265회, 세션 시작·종료 76회, export 7회가 실행됐다. 503은 3건이었는데, 동시 실행 제한이 의도대로 동작한 것이다.</p>
+
+<h2 id="deploy">배포 기록 (2026-10-07 21:30)</h2>
+<ol>
+  <li><code>/opt/wvd</code>에 1.2.0 설치. 새 의존성은 httpx이다.</li>
+  <li>서비스 정지 후 DB 백업: <code>/var/lib/private/wvd/wvd.db.bak-1.0-202610072130</code> (139 MB, root 소유)</li>
+  <li>유닛 파일 갱신(<code>RuntimeDirectory=wvd</code> 추가) 후 시작. 50 Hz 드롭인은 그대로 둔다.</li>
+  <li>기존 DB를 그대로 쓴다. 새 열 <code>samples.gap</code>, <code>sessions.stats</code>와 새 테이블 <code>meta</code>가 자동으로 추가됐다.</li>
+  <li>수집이 끊긴 시간은 <b>0.43초</b>였다. 이 구간도 <code>last_gap</code>에 기록됐다.</li>
+  <li>다른 PC 대시보드 두 대(192.168.1.20, .146)는 재시작 1초 뒤 자동으로 다시 연결됐다.</li>
+  <li>실제 기기 부하 시험을 통과했다. 시험이 만든 세션은 모두 지워졌다.</li>
+</ol>
+<p>git: <code>main</code>을 fast-forward로 병합하고 <code>v1.1.0</code>, <code>v1.2.0</code> 태그를 붙였다. <code>origin</code>에는 push하지 않았다.</p>
+<p>다시 배포하는 절차는 다음과 같다. 설치 때 생기는 <code>build/</code> 디렉터리가 root 소유라서 지워야 한다.</p>
+<pre><code>sudo /opt/wvd/bin/pip install "$PWD[server]" &amp;&amp; sudo rm -rf build
+sudo cp packaging/wvd.service /etc/systemd/system/ &amp;&amp; sudo systemctl daemon-reload
+sudo systemctl restart wvd</code></pre>
+
+<h2 id="seriesa">seriesA 참고</h2>
+<ul>
+  <li><b>공백은 seq로 판단하지 않는다.</b> seq는 수집이 멈춘 구간에도 비지 않고, recorder가 재시작되면 앞으로 건너뛴다. <code>gap_s</code>나 <code>ts</code> 간격을 쓴다.</li>
+  <li><b>guard의 지연 검사는 <code>now - sample.ts</code>로 한다.</b> 스트림 전달 지연이 최대 수십 ms라서, 샘플 정지 기준을 5초에서 3초로 되돌릴 근거가 된다(리뷰 7장의 결정 항목).</li>
+  <li><b>사전 점검</b>에는 health의 <code>status</code>, <code>gaps_total</code>, <code>max_gap_s_5m</code>, <code>processes[*].restarts</code>를 쓴다.</li>
+  <li><b><code>lag</code> 메시지</b>를 받으면 그 구독자가 밀렸다는 뜻이다. 빠진 구간은 <code>/sensors/history?after_seq=</code>로 다시 받는다.</li>
+</ul>
+
+<h2 id="todo">남은 일</h2>
+<ul>
+  <li><b><code>/docs</code></b>: api 프로세스의 OpenAPI라서 front가 직접 처리하는 엔드포인트(health, latest, info, limits, stream, metrics)가 빠져 있다.</li>
+  <li><b>E7</b>: 세션 구간 샘플은 계속 보관된다. 세션을 많이 쓰면 보관 정책이 필요하다.</li>
+  <li><b>DB 백업 파일</b>(139 MB)은 1.2가 안정되면 지워도 된다.</li>
+  <li><b><code>origin</code> push</b>: 아직 하지 않았다.</li>
+</ul>
+</main>
+</body>
+</html>

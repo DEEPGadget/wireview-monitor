@@ -256,7 +256,7 @@ sudo systemctl enable --now wvd
 ├── tests/
 ├── scripts/            up.sh, down.sh
 ├── packaging/          systemd 서비스, udev 규칙
-├── docs/design.html    설계 문서
+├── docs/              설계 문서(design.html), 버전별 기록(v1.0.html, v1.1.html, v1.2.html)
 └── pyproject.toml
 ```
 
