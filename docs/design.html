@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wvd 설계안</title>
+<style>
+  :root {
+    --bg: #fafaf9; --surface: #ffffff; --text: #1c1917; --muted: #57534e;
+    --border: #e7e5e4; --accent: #c2410c; --accent-soft: #fff7ed; --code-bg: #f5f5f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+      --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141210; --surface: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+    --border: #2e2a27; --accent: #fb923c; --accent-soft: #2a1a10; --code-bg: #252220;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.3rem; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  p, li { color: var(--text); }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  .meta { color: var(--muted); font-size: 0.85rem; }
+  code { font: 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+    padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font: 0.84rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre code { background: none; padding: 0; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 8px 0; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .callout { background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .card b { display: block; font-size: 1.25rem; }
+  .card span { color: var(--muted); font-size: 0.85rem; }
+  nav { margin: 16px 0 0; font-size: 0.9rem; }
+  nav a { color: var(--accent); margin-right: 14px; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+<h1>wvd — WireView 측정 데몬 · 대시보드 설계안</h1>
+<p class="meta">2026-10-07 · 대상 기기: Thermal Grizzly WireView Pro II (EF05) / Noctua Edition (EF06)</p>
+<p class="lede"><code>/dev/ttyACM0</code>를 단일 프로세스가 소유하고, 측정값을 <b>웹 대시보드 · REST/WebSocket API · CLI</b> 세 경로로 동일하게 제공한다. 목표는 사람 없이 테스트 코드가 측정·구간 통계·합격 판정까지 수행하는 자율 테스트.</p>
+<nav><a href="#facts">실측</a><a href="#protocol">프로토콜</a><a href="#daemon">1) 데몬</a><a href="#dashboard">2) 대시보드</a><a href="#access">a. CLI/API</a><a href="#roadmap">로드맵</a></nav>
+
+<h2 id="facts">실측 결과</h2>
+<div class="grid">
+  <div class="card"><b>0.2 ms</b><span>센서 읽기 지연 (p50, p99 0.3 ms)</span></div>
+  <div class="card"><b>0 / 300</b><span>연속 읽기 중 손상 프레임</span></div>
+  <div class="card"><b>~16 ms</b><span>기기 측정값 갱신 주기 (≈60 Hz)</span></div>
+  <div class="card"><b>10 Hz</b><span>wvd 기본 샘플링 (1–50 Hz 설정)</span></div>
+</div>
+<p>원본 GUI는 1 Hz로 폴링하지만, 기기는 약 16 ms마다 값을 갱신하고 응답도 즉시 돌려준다. 따라서 기본 10 Hz, 최대 50 Hz로 잡는다. 측정 기기: FW <code>TG-WV-PRO2-FW_20260430_1838</code>.</p>
+
+<h2 id="protocol">시리얼 프로토콜 (원본 C# 코드에서 추출, 실기기 검증)</h2>
+<p>115200 8N1 raw. 프레이밍·CRC 없음: <b>입력 버퍼 flush → 명령 1바이트 write → 고정 길이 read (1 s 타임아웃)</b>.</p>
+<div class="table-wrap"><table>
+  <tr><th>명령</th><th>코드</th><th>응답</th><th>내용</th></tr>
+  <tr><td>READ_VENDOR_DATA</td><td><code>0x01</code></td><td>3 B</td><td>vendor, product, fw 버전 (예 <code>ef 05 05</code>)</td></tr>
+  <tr><td>READ_UID</td><td><code>0x02</code></td><td>12 B</td><td>칩 UID</td></tr>
+  <tr><td>READ_SENSOR_VALUES</td><td><code>0x04</code></td><td>100 B</td><td>센서 구조체 (아래)</td></tr>
+  <tr><td>READ_BUILD_INFO</td><td><code>0x0D</code></td><td>68 B</td><td>offset 35부터 32 B 빌드 문자열</td></tr>
+  <tr><td>CLEAR_FAULTS</td><td><code>0x0E</code></td><td>없음</td><td>+ keepStatusMask u16, keepLogMask u16 (LE)</td></tr>
+</table></div>
+<pre><code>센서 프레임 100 B, little-endian, Python struct: "&lt;4hHBx" + "h2xII"*6 + "IIHBxHH"
+  Ts[4] int16 0.1°C (in, out, ext1, ext2) | Vdd u16 mV | FanDuty u8 % | pad
+  6 × { Voltage int16 mV, pad2, Current u32 mA, Power u32 mW }
+  TotalPower u32 mW | TotalCurrent u32 mA | AvgVoltage u16 mV | HpwrCap u8 (0=600 1=450 2=300 3=150 W) | pad
+  FaultStatus u16 | FaultLog u16
+손상 판정 (원본과 동일): buf[10] &gt; 100 or buf[11] != 0 or buf[95] != 0
+Fault 비트: 0 OTP_TCHIP · 1 OTP_TS · 2 OCP · 3 WIRE_OCP · 4 OPP · 5 CURRENT_IMBALANCE</code></pre>
+<div class="callout">프레이밍이 없으므로 <b>포트는 반드시 한 프로세스만</b> 연다. wvd는 <code>TIOCEXCL</code>로 포트를 배타적으로 잡는다. 기존 GUI와 wireviewd는 함께 띄우지 않는다.</div>
+
+<h2 id="daemon">1) 백엔드 데몬 <code>wvd</code></h2>
+<p>Python 3.10+, asyncio + FastAPI/uvicorn. 시리얼은 stdlib <code>termios</code>만 사용 (pyserial 불필요).</p>
+<pre><code>/dev/ttyACM0 ─ Transport ─ Protocol ─ Sampler(스레드) ─┬─ Store: 메모리 링버퍼 + SQLite
+   (단독 소유)                                         ├─ Event 엔진 (폴트/임계값/연결)
+                                                       └─ Hub ─ REST · WebSocket · SSE · /metrics</code></pre>
+<div class="table-wrap"><table>
+  <tr><th>계층</th><th>역할</th></tr>
+  <tr><td>Transport</td><td>raw 115200 8N1, <code>TIOCEXCL</code> 배타 오픈, sysfs로 VID:PID 0483:5740 포트 자동 탐색, 언플러그 시 자동 재연결. <code>--simulate</code> 시 가상 기기.</td></tr>
+  <tr><td>Protocol</td><td>명령/응답, 100 B 디코딩, 손상 프레임 검사. vendor 데이터로 EF05/EF06만 수용.</td></tr>
+  <tr><td>Sampler</td><td>단조 시계 기반 고정 주기 폴링, 샘플마다 <code>seq</code>·timestamp, 연속 6회 실패 시 연결 해제. 쓰기 명령도 이 스레드가 직렬 실행.</td></tr>
+  <tr><td>Store</td><td>링버퍼(최근 15분, 실시간) + SQLite WAL(원본 100 B 프레임 BLOB 저장, 기본 보관 72 h). <b>세션 구간 데이터는 보관 기간과 무관하게 영구 보존</b>.</td></tr>
+  <tr><td>Event 엔진</td><td>FaultStatus/FaultLog 비트 변화, 임계값 진입/해제(히스테리시스), 연결 끊김/복구 → 저장 + 푸시.</td></tr>
+</table></div>
+
+<h3>샘플 스키마 (모든 경로 공통)</h3>
+<pre><code>{ "ts": 1791380341.123, "seq": 18234, "device": "7D005E001150455441313220",
+  "pins": [{"v":12.281,"a":0.216,"w":2.652}, … ×6],
+  "total_w": 17.13, "total_a": 1.395, "avg_v": 12.283, "vdd_v": 3.456,
+  "temps_c": {"in":31.5,"out":32.2,"ext1":30.8,"ext2":30.8},
+  "fan_pct": 0, "psu_cap_w": 600, "fault_status": 0, "fault_log": 0, "faults": [],
+  "derived": {"max_pin_a": 0.256, "pin_imbalance": null } }</code></pre>
+<p><code>pin_imbalance</code> = 최대 핀 전류 ÷ 평균 핀 전류 (1.0 = 완전 균형). 12V-2x6 커넥터 용융 위험의 핵심 지표다. 총 전류가 1 A 미만이면 의미가 없어 <code>null</code>. 에너지(Wh)는 구간 통계에서 적분한다.</p>
+
+<h3>API v1 (기본 <code>http://&lt;host&gt;:8765</code>, OpenAPI 문서 <code>/docs</code>)</h3>
+<div class="table-wrap"><table>
+  <tr><th>메서드</th><th>경로</th><th>용도</th></tr>
+  <tr><td>GET</td><td><code>/api/v1/health</code></td><td>연결 상태, 마지막 샘플 나이, 실측 Hz, ok/corrupt/failed 카운터</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/info</code></td><td>UID, vendor/product, 에디션, FW, 빌드 문자열</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/sensors/latest</code></td><td>최신 샘플</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/sensors/history</code></td><td><code>last=60s</code> | <code>from</code>/<code>to</code> | <code>after_seq</code>, <code>step=1s</code> 다운샘플(구간 평균)</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/sensors/stats</code></td><td>구간(<code>last</code>/<code>from</code>/<code>to</code>/<code>session</code>) 필드별 min/max/avg/p95, energy_wh, 발생 폴트</td></tr>
+  <tr><td>WS</td><td><code>/api/v1/stream</code></td><td>샘플·이벤트 실시간 푸시 (<code>?hz=</code>로 감속)</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/stream/sse</code></td><td>같은 스트림, Server-Sent Events (curl 친화)</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/events</code></td><td>폴트/임계값/연결 이벤트 이력</td></tr>
+  <tr><td>GET/POST</td><td><code>/api/v1/sessions</code>, <code>/{id}/stop</code>, <code>/{id}</code>, <code>/{id}/export</code></td><td>테스트 구간 마킹 · 결과 통계 · CSV/JSONL 내보내기</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/export</code>, <code>/api/v1/limits</code></td><td>임의 구간 내보내기, 임계값 설정 조회</td></tr>
+  <tr><td>GET</td><td><code>/metrics</code></td><td>Prometheus</td></tr>
+  <tr><td>POST</td><td><code>/api/v1/device/clear-faults</code></td><td><code>--allow-write</code>일 때만 활성</td></tr>
+</table></div>
+
+<h3>운영</h3>
+<ul>
+  <li><b>systemd</b> 서비스 (<code>dialout</code> 그룹), 저장소의 기존 udev 규칙이 권한과 <code>/dev/wireview-pro2</code> 심링크를 제공.</li>
+  <li><b>보안</b>: 기본 <code>0.0.0.0</code> 바인딩(LAN에서 바로 접속 가능). 토큰이 없으면 읽기는 누구나 가능하고 시작 시 경고를 남긴다. <code>--token</code>(Bearer, WS는 <code>?token=</code>)을 주면 인증을 요구한다. 토큰 없이 외부 바인딩에서 <code>--allow-write</code>를 켜면 시작을 거부한다. TLS는 리버스 프록시에 맡긴다.</li>
+  <li><b>시뮬레이터</b>: <code>wvd --simulate idle|load|imbalance|fault</code>. 하드웨어 없이 CI에서 전체 경로를 검증한다. 시뮬레이터도 100 B 프레임을 인코딩해서 내보내므로 디코딩 경로까지 함께 테스트된다.</li>
+  <li><b>다중 기기 대비</b>: 내부 키를 UID로 두어 확장이 가능하게 한다 (현재는 단일 기기).</li>
+</ul>
+
+<h2 id="dashboard">2) 웹 대시보드</h2>
+<p>빌드 단계 없는 정적 페이지(HTML + ES modules) + <b>uPlot</b> 시계열 차트. <code>wvd</code>가 <code>/</code>에서 직접 서빙한다. 대시보드도 API 클라이언트 중 하나일 뿐이다.</p>
+<pre><code>┌ 헤더: ● 연결 | WireView Pro II · FW | PSU 600W | 폴트 배지 | 세션 시작/정지 ┐
+├ KPI: 총 전력 · 총 전류 · 평균 전압 · 최고 온도 · 핀 불균형                   ┤
+├ 핀 패널: 6핀 전류 막대 + 임계값 선, 핀별 V/A/W                              ┤
+├ 차트 (1m/5m/15m/1h): 총 전력 · 핀별 전류 · 핀별 전압 · 온도                 ┤
+└ 하단: 이벤트 타임라인 · 세션 목록(통계, CSV) · 기기 정보                     ┘</code></pre>
+<ul>
+  <li>초기 로드 <code>history</code> → WebSocket으로 이어 붙임 → 재연결 시 <code>after_seq</code>로 끊긴 구간 보충.</li>
+  <li>임계값은 <code>/api/v1/limits</code>에서 받아 화면 경고와 CLI/API 판정에 같은 기준을 적용한다.</li>
+  <li>여러 명이 동시에 봐도 기기에는 데몬 하나만 접근한다. 라이트/다크 테마, 모바일 폭 지원.</li>
+</ul>
+
+<h2 id="access">a. CLI · API 접근</h2>
+<p>세 경로 모두 같은 데몬과 같은 스키마를 쓴다. <code>wvclient</code>(의존성 없는 Python 클라이언트) 위에 CLI <code>wvctl</code>을 만든다.</p>
+<pre><code>wvctl info                               # 기기 정보
+wvctl now [--json]                       # 현재값
+wvctl watch                              # 실시간 갱신 (SSE)
+wvctl log --duration 60s -o run.csv      # 기록 (csv/jsonl)
+wvctl stats --last 5m [--json]           # 구간 통계
+wvctl session start "load-A" / session stop [--json]
+wvctl assert --duration 30s --max-total-w 600 --max-pin-a 9.5 --max-temp 70 --no-faults
+                                         # 통과 0 / 위반 1 / 오류 2 → CI에서 바로 판정
+wvctl --url http://host:8765 --token … # 원격 데몬</code></pre>
+<pre><code>from wvd.client import WireView
+wv = WireView("http://127.0.0.1:8765")
+with wv.session("gpu-stress-01") as s:
+    run_gpu_stress(60)
+st = s.stats()
+assert st["fields"]["total_w"]["max"] &lt; 600 and not st["faults_seen"]</code></pre>
+<p>pytest fixture <code>wireview</code>를 제공한다. <code>WVD_URL</code>이 있으면 그 데몬을 쓰고, 없으면 시뮬레이터 데몬을 자동으로 띄운다. REST는 curl/Go/JS 어디서나 쓸 수 있고, <code>/metrics</code>로 Grafana에도 연결된다.</p>
+
+<h2 id="roadmap">로드맵과 기본 결정</h2>
+<div class="table-wrap"><table>
+  <tr><th>단계</th><th>범위</th></tr>
+  <tr><td>P1</td><td>Transport/Protocol/Sampler, 링버퍼, REST 조회, <code>wvctl info/now/watch</code>, 시뮬레이터</td></tr>
+  <tr><td>P2</td><td>WebSocket/SSE, 웹 대시보드</td></tr>
+  <tr><td>P3</td><td>SQLite, 세션, stats/export, 이벤트 엔진, <code>wvctl log/stats/assert</code>, pytest fixture</td></tr>
+  <tr><td>P4</td><td>토큰 인증 외부 공개, <code>/metrics</code>, clear-faults(옵트인), 다중 기기</td></tr>
+</table></div>
+<div class="table-wrap"><table>
+  <tr><th>항목</th><th>기본값 (변경 가능)</th></tr>
+  <tr><td>샘플링</td><td>10 Hz (<code>--rate</code> 1–50)</td></tr>
+  <tr><td>보관</td><td>원본 프레임 72 h (<code>--retention</code>), 세션 구간 영구</td></tr>
+  <tr><td>공개 범위</td><td><code>0.0.0.0:8765</code> (모든 인터페이스), 토큰은 선택. 쓰기 명령만 토큰 필수</td></tr>
+  <tr><td>쓰기 명령</td><td>clear-faults만, <code>--allow-write</code> 옵트인</td></tr>
+  <tr><td>임계값</td><td>핀 9.5 A · 총 600 W · 온도 80 °C · 불균형 1.5 (경고용, <code>--limit-*</code>)</td></tr>
+  <tr><td>코드 위치</td><td><code>wireview-monitor/</code> (.NET 앱과 별개 구현, 코드 공유 없음)</td></tr>
+</table></div>
+</main>
+</body>
+</html>

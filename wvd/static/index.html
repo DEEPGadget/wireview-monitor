@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WireView Monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M9 1 3 9h4l-1 6 6-8H8z' fill='%23eb6834'/></svg>">
+<link rel="stylesheet" href="vendor/uPlot.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="viz-root">
+<header class="topbar">
+  <div class="brand">
+    <span class="status" id="status" role="status"><span class="dot"></span><span id="status-text">Connecting…</span></span>
+    <div class="device">
+      <strong id="dev-name">WireView</strong>
+      <span id="dev-meta" class="muted"></span>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span id="fault-badge" class="badge ok" title="Device fault status">No faults</span>
+    <form id="session-form" class="session">
+      <input id="session-label" placeholder="Session label" aria-label="Session label" maxlength="80">
+      <button id="session-btn" type="submit">Start session</button>
+    </form>
+    <button id="theme-btn" class="ghost" type="button" aria-label="Toggle theme">◐</button>
+  </div>
+</header>
+
+<div id="auth" class="auth" hidden>
+  <form id="auth-form">
+    <label for="auth-token">This daemon needs an access token</label>
+    <input id="auth-token" type="password" autocomplete="off">
+    <button type="submit">Connect</button>
+  </form>
+</div>
+
+<main>
+  <section class="kpis" aria-label="Current readings">
+    <div class="kpi"><span class="k-label">Total power</span><span class="k-value" id="k-power">–</span><span class="k-sub" id="k-power-sub"></span></div>
+    <div class="kpi"><span class="k-label">Total current</span><span class="k-value" id="k-current">–</span><span class="k-sub" id="k-current-sub"></span></div>
+    <div class="kpi"><span class="k-label">Average voltage</span><span class="k-value" id="k-voltage">–</span><span class="k-sub" id="k-voltage-sub"></span></div>
+    <div class="kpi"><span class="k-label">Hottest sensor</span><span class="k-value" id="k-temp">–</span><span class="k-sub" id="k-temp-sub"></span></div>
+    <div class="kpi"><span class="k-label">Pin imbalance</span><span class="k-value" id="k-imb">–</span><span class="k-sub" id="k-imb-sub"></span></div>
+  </section>
+
+  <section class="card pins" aria-labelledby="pins-h">
+    <div class="card-head"><h2 id="pins-h">12V pins</h2><span class="muted" id="pins-note"></span></div>
+    <div class="pin-grid">
+      <div id="pin-bars" class="pin-bars" role="img" aria-label="Current per pin"></div>
+      <table class="pin-table">
+        <thead><tr><th>Pin</th><th>Voltage</th><th>Current</th><th>Power</th></tr></thead>
+        <tbody id="pin-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="range-row" role="group" aria-label="Chart time range">
+    <span class="muted">Range</span>
+    <button type="button" data-range="60">1 min</button>
+    <button type="button" data-range="300" class="on">5 min</button>
+    <button type="button" data-range="900">15 min</button>
+    <button type="button" data-range="3600">1 hour</button>
+    <label class="pause"><input type="checkbox" id="pause"> Pause</label>
+  </div>
+
+  <section class="charts">
+    <div class="card chart"><div class="card-head"><h2>Total power</h2><span class="muted">W</span></div><div id="c-power"></div></div>
+    <div class="card chart"><div class="card-head"><h2>Current per pin</h2><span class="muted">A</span></div><div id="c-current"></div></div>
+    <div class="card chart"><div class="card-head"><h2>Voltage per pin</h2><span class="muted">V</span></div><div id="c-voltage"></div></div>
+    <div class="card chart"><div class="card-head"><h2>Temperature</h2><span class="muted">°C</span></div><div id="c-temp"></div></div>
+    <div class="card tile">
+      <div class="card-head"><h2>Sessions</h2><span class="muted" id="sess-note"></span></div>
+      <div class="tile-body table-wrap"><table class="sessions">
+        <thead><tr><th>Label</th><th>Length</th><th>Max W</th><th>Pin A</th><th>Faults</th><th></th></tr></thead>
+        <tbody id="sessions"></tbody>
+      </table></div>
+    </div>
+    <div class="card tile">
+      <div class="card-head"><h2>Device</h2></div>
+      <div class="tile-body">
+        <dl id="device-info" class="kv"></dl>
+        <p class="muted small">API: <a href="docs">/docs</a> · <a href="metrics" id="metrics-link">/metrics</a> · CLI: <code>wvctl</code></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card events-card" aria-labelledby="events-h">
+    <div class="card-head"><h2 id="events-h">Events</h2><span class="muted">last 24 h</span></div>
+    <ol id="events" class="events"><li class="muted">No events</li></ol>
+  </section>
+
+</main>
+</div>
+<script src="vendor/uPlot.iife.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
