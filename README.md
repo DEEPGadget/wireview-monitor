@@ -19,6 +19,18 @@ Thermal Grizzly WireView Pro II의 측정값(핀별 전압·전류, 온도, 폴�
 
 `wvd` 명령 자체는 이 세 프로세스를 띄우고 감시만 합니다. 자식이 죽으면 1초 뒤 다시 띄우고, 60초 안에 5번 넘게 죽으면 종료 코드 70으로 끝납니다. `wvd`가 끝나면 자식도 함께 끝납니다. 프로세스 간 소켓은 `$RUNTIME_DIRECTORY`(systemd) 또는 `$XDG_RUNTIME_DIR` 아래 비공개 디렉터리에 만듭니다.
 
+## 버전 기록
+
+현재 버전은 **1.2.0**입니다. 버전별 배경, 결정 사항, 시험 결과는 아래 상세 문서에 있습니다. 변경 목록은 [CHANGELOG.md](CHANGELOG.md), 처음 설계는 [docs/design.html](docs/design.html)을 보세요.
+
+| 버전 | 주요 변화 | 부하 중 최대 수집 공백¹ | 상세 문서 |
+|---|---|---|---|
+| **1.2.0** | 프로세스 3개로 분리(recorder · api · front)하고 `wvd`가 감시. 자식이 죽으면 자동 재시작. 재시작해도 seq가 겹치지 않음. health에 프로세스 상태 추가 | **20 ms** (수집 주기 그대로, 누락 0) | [docs/v1.2.html](docs/v1.2.html) |
+| 1.1.0 | USB 재연결 시 수집 스레드가 죽던 문제(C1) 수정. DB 기록을 별도 스레드로 분리해 수집이 잠금을 기다리지 않음. 샘플에 `gap_s` 추가. health 확장. export 스트리밍. 무거운 조회는 동시 2개로 제한 | 0.38 s (GIL 경합이 남음) | [docs/v1.1.html](docs/v1.1.html) |
+| 1.0.0 | 첫 릴리스: 단일 프로세스 데몬, 대시보드, REST/WS/SSE, CLI, systemd 배포 | 26.5 s (조회 중 수집 정지) | [docs/v1.0.html](docs/v1.0.html) |
+
+¹ 50 Hz에서 1시간 구간 history·stats·export, 대시보드 세션 갱신, SSE 5개를 동시에 건 부하 시험(`tests/wvd_stress.py`) 결과입니다. 1.0에서 드러난 문제의 원본 리뷰는 [reviews/wireview-monitor-issues.html](reviews/wireview-monitor-issues.html)에 있습니다.
+
 ## 빠른 시작
 
 ```bash
