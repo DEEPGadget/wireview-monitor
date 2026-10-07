@@ -1,0 +1,25 @@
+# Serial access to the WireView Pro II (STM32 CDC-ACM, 0483:5740) for wvd.
+#
+# The tty becomes 0660 root:dialout, and the user logged in at the local seat
+# gets an ACL through the uaccess tag. The 70- prefix matters: systemd turns
+# the tag into an ACL in 73-seat-late.rules, which only sees tags set earlier.
+# Over SSH (no local seat) join the group instead: sudo usermod -aG dialout $USER
+#
+# Arch-based distros have no dialout group; use uucp there:
+#   sed -i 's/GROUP="dialout"/GROUP="uucp"/' 70-wireview.rules
+#
+# Install:
+#   sudo cp packaging/70-wireview.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+
+ACTION=="remove", GOTO="wireview_end"
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", \
+  GROUP="dialout", MODE="0660", TAG+="uaccess", SYMLINK+="wireview-pro2", \
+  ENV{ID_MM_PORT_IGNORE}="1"
+
+# ModemManager probes new CDC-ACM ports with AT commands; keep it away.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0483", ATTR{idProduct}=="5740", \
+  ENV{ID_MM_DEVICE_IGNORE}="1"
+
+LABEL="wireview_end"

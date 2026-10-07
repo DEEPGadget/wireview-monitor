@@ -1,10 +1,10 @@
-# systemd unit for wvd. Install the package into /opt/wvd first:
-#   sudo python3 -m venv /opt/wvd && sudo /opt/wvd/bin/pip install "/path/to/wireview-linux/wireview-monitor[server]"
+# systemd unit for wvd. From the repository root:
+#   sudo python3 -m venv /opt/wvd && sudo /opt/wvd/bin/pip install "$PWD[server]"
 #   sudo cp packaging/wvd.service /etc/systemd/system/ && sudo systemctl enable --now wvd
-# Serial access comes from the repo's udev rule (udev/99-wireview.rules: 0660
-# root:dialout). On Arch-based distros use SupplementaryGroups=uucp.
-# Do not run the WireView GUI or wireviewd at the same time: wvd holds the
-# port exclusively.
+# Serial access comes from packaging/70-wireview.rules (0660 root:dialout).
+# On Arch-based distros use SupplementaryGroups=uucp.
+# wvd holds the port exclusively: stop scripts/up.sh, the official GUI and
+# wireviewd first.
 [Unit]
 Description=WireView Pro II measurement daemon (API + dashboard)
 After=network.target
