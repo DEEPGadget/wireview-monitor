@@ -5,9 +5,14 @@ is also written to SQLite so any window can be re-decoded later; frames older
 than the retention are pruned unless a session covers them.
 
 The sampler never waits on this module: add() and add_event() only append to
-the ring and to a queue. A writer thread owns all inserts and pruning, and
-readers use their own connections (WAL lets them run beside the writer), so
-no query holds anything the sampler needs.
+a queue. A writer thread owns all inserts and pruning, and readers use their
+own connections (WAL lets them run beside the writer), so no query holds
+anything the sampler needs.
+
+Since 1.2 the writer runs only in the recorder process (writer=True). The api
+process opens the same file read-mostly (writer=False: sessions only) and
+fills its ring from the recorder's feed, so queries still see the tail the
+writer has not committed yet.
 """
 from __future__ import annotations
 
@@ -52,6 +57,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     end_ts   REAL,
     stats    TEXT
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value INTEGER NOT NULL
+);
 """
 # Columns added after 1.0, for databases created by it.
 MIGRATIONS = (("samples", "gap", "REAL"), ("sessions", "stats", "TEXT"))
@@ -64,6 +73,11 @@ PRUNE_CHUNK = 5_000
 PRUNE_MAX_CHUNKS = 20      # per pass; 100k rows, far above the 3k/min written at 50 Hz
 MAX_PENDING_S = 300        # writer backlog kept before samples are dropped from the DB
 BUSY_TIMEOUT_MS = 10_000
+# Seqs and event ids handed out may run ahead of what is committed. The writer
+# records a high-water mark this far ahead, and a restarted recorder starts
+# above it, so a crash never reuses a number subscribers have already seen.
+SEQ_MARGIN_S = 120
+EVENT_ID_MARGIN = 1_000
 
 
 def default_db_path() -> str:
@@ -73,8 +87,11 @@ def default_db_path() -> str:
 
 
 class Store:
-    def __init__(self, db_path: str | None, ring_size: int, retention_s: float, rate_hz: float = 10.0):
+    def __init__(self, db_path: str | None, ring_size: int, retention_s: float, rate_hz: float = 10.0,
+                 writer: bool = True):
         self.retention_s = retention_s
+        self.is_writer = writer
+        self._seq_margin = max(1000, int(SEQ_MARGIN_S * rate_hz))
         self._ring: deque[dict] = deque(maxlen=ring_size)
         self._queue: queue.SimpleQueue = queue.SimpleQueue()
         self._max_pending = max(1000, int(MAX_PENDING_S * rate_hz))
@@ -98,9 +115,13 @@ class Store:
         for table, col, kind in MIGRATIONS:
             if col not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {kind}")
-        self.last_seq = db.execute("SELECT MAX(seq) FROM samples").fetchone()[0] or 0
+        meta = dict(db.execute("SELECT key, value FROM meta").fetchall())
+        self.last_seq = max(db.execute("SELECT MAX(seq) FROM samples").fetchone()[0] or 0, meta.get("seq_hwm", 0))
         self.flushed_seq = self.last_seq
-        self._last_event_id = db.execute("SELECT MAX(id) FROM events").fetchone()[0] or 0
+        row = db.execute("SELECT ts FROM samples ORDER BY seq DESC LIMIT 1").fetchone()
+        self.last_stored_ts: float | None = row[0] if row else None
+        self._last_event_id = max(db.execute("SELECT MAX(id) FROM events").fetchone()[0] or 0,
+                                  meta.get("event_hwm", 0))
         self._event_lock = threading.Lock()
 
         self._stop = threading.Event()
@@ -122,11 +143,13 @@ class Store:
 
     # -- lifecycle --------------------------------------------------------
     def start(self) -> None:
-        self._writer.start()
+        if self.is_writer:
+            self._write_hwm()  # before any seq is handed out
+            self._writer.start()
 
     @property
     def writer_alive(self) -> bool:
-        return self._writer.is_alive()
+        return self._writer.is_alive() if self.is_writer else True
 
     @property
     def pending(self) -> int:
@@ -136,7 +159,7 @@ class Store:
         if self._writer.is_alive():
             self._stop.set()
             self._writer.join(timeout=10)
-        else:
+        elif self.is_writer:
             self._write_batch(self._drain())  # never started (or died): write what is left here
         with self._conns_lock:
             for c in self._conns:
@@ -181,6 +204,7 @@ class Store:
             db.execute("BEGIN")
             db.executemany("INSERT OR REPLACE INTO samples (seq, ts, device, frame, gap) VALUES (?,?,?,?,?)", samples)
             db.executemany("INSERT OR REPLACE INTO events (id, ts, type, data) VALUES (?,?,?,?)", events)
+            self._write_hwm(db)
             db.execute("COMMIT")
         except sqlite3.Error:
             log.exception("DB write failed, %d samples and %d events lost", len(samples), len(events))
@@ -192,6 +216,11 @@ class Store:
             return
         if samples:
             self.flushed_seq = samples[-1][0]
+
+    def _write_hwm(self, db: sqlite3.Connection | None = None) -> None:
+        (db or self._conn()).executemany(
+            "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [("seq_hwm", self.last_seq + self._seq_margin), ("event_hwm", self._last_event_id + EVENT_ID_MARGIN)])
 
     def _prune(self, now: float) -> None:
         """Delete expired rows in short transactions so readers and writes interleave."""
@@ -220,8 +249,12 @@ class Store:
         self.last_seq += 1
         return self.last_seq
 
-    def add(self, sample: dict, frame: bytes) -> None:
-        self._ring.append(sample)
+    def add(self, sample: dict, frame: bytes | None = None) -> None:
+        """Writer: queue the frame for the DB. Reader (api): keep the sample in the ring."""
+        if not self.is_writer:
+            self._ring.append(sample)
+            self.last_seq = sample["seq"]
+            return
         if self._queue.qsize() >= self._max_pending:
             self.db_dropped += 1  # writer stuck: keep sampling, lose the DB copy
             return
@@ -265,7 +298,8 @@ class Store:
             return len(self._ring_slice(self._ring_copy(), t_from, t_to))
         b = self._seq_bounds(t_from, t_to)
         db_n = b[1] - b[0] + 1 if b else 0
-        return db_n + max(0, self.last_seq - self.flushed_seq)
+        hi = b[1] if b else 0
+        return db_n + sum(1 for s in self._ring_slice(self._ring_copy(), t_from, t_to) if s["seq"] > hi)
 
     def iter_range(self, t_from: float, t_to: float, chunk: int = CHUNK_SAMPLES) -> Iterator[list[dict]]:
         """Yield the window as lists of samples in seq order, chunk by chunk.

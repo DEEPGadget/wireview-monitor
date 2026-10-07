@@ -18,6 +18,11 @@ if [[ -z "$pid" ]]; then
         echo "error: port $PORT belongs to pid $pid, which is not wvd. Not touching it." >&2
         exit 1
     fi
+    # Since 1.2 the port belongs to the front child; stop its supervisor instead,
+    # which would otherwise just restart the child.
+    if [[ -n "$pid" ]] && tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q -- '--role'; then
+        pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+    fi
 fi
 if [[ -z "$pid" ]]; then
     rm -f "$PID_FILE"

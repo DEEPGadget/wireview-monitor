@@ -9,6 +9,16 @@ Thermal Grizzly WireView Pro II의 측정값(핀별 전압·전류, 온도, 폴�
                                    └─ /metrics            Prometheus
 ```
 
+`wvd`는 내부적으로 프로세스 3개로 동작합니다(1.2부터). 어느 한쪽에 부하가 걸려도 다른 쪽을 늦추지 못하게 하기 위해서입니다.
+
+| 프로세스 | 하는 일 |
+|---|---|
+| recorder | 기기 읽기, DB 기록, 폴트·경고 판정, 실시간 피드 배포 |
+| front | 8765 포트: 대시보드, WS/SSE, `latest`, `health`, `/metrics`. 나머지 `/api/*` 요청은 api로 전달 |
+| api | history, stats, export, 세션 (무거운 조회 전담) |
+
+`wvd` 명령 자체는 이 세 프로세스를 띄우고 감시만 합니다. 자식이 죽으면 1초 뒤 다시 띄우고, 60초 안에 5번 넘게 죽으면 종료 코드 70으로 끝납니다. `wvd`가 끝나면 자식도 함께 끝납니다. 프로세스 간 소켓은 `$RUNTIME_DIRECTORY`(systemd) 또는 `$XDG_RUNTIME_DIR` 아래 비공개 디렉터리에 만듭니다.
+
 ## 빠른 시작
 
 ```bash
@@ -18,7 +28,7 @@ WVD_TOKEN=secret scripts/up.sh    # 환경변수도 적용됨
 scripts/down.sh                   # 끄기
 ```
 
-- 대시보드도 wvd가 서빙하므로 프로세스는 하나입니다.
+- 대시보드도 wvd가 서빙합니다. 실행하는 명령은 `wvd` 하나입니다(내부 프로세스 3개는 자동 관리).
 - 브라우저에서 http://127.0.0.1:8765/ 를 엽니다. 다른 PC에서는 `http://<이 PC의 IP>:8765/`로 접속합니다.
 - PID 파일과 로그는 `run/`에 저장됩니다(`run/wvd.log`).
 - `up.sh`로 띄운 서버는 터미널을 닫아도 계속 실행됩니다. 재부팅 후에도 자동으로 켜려면 [서비스로 실행](#서비스로-실행)을 참고하세요.
@@ -159,10 +169,11 @@ def test_power_budget(wireview):
  "db_queue": 12, "db_dropped": 0, "stream_dropped": 0, "counters": {"ok": 606124, "loop_errors": 0, …}, …}
 ```
 
-- `status`: `ok`, `degraded`(기기 연결 끊김 또는 샘플이 3초 넘게 없음), `down`(수집 또는 DB 기록 스레드가 죽음)
+- `status`: `ok`, `degraded`(기기 연결 끊김, 샘플이 3초 넘게 없음, 또는 api 프로세스 응답 없음), `down`(recorder가 없거나 재시작 중, 또는 수집·DB 기록 스레드가 죽음)
+- `processes`: 프로세스별 `pid`, `restarts`, `last_exit`. `api_ok`는 api 프로세스 응답 여부, `recorder_status_age_s`는 recorder의 마지막 상태 보고 이후 시간입니다.
 - `gaps_total`, `max_gap_s_5m`, `last_gap`: 샘플 간격이 주기의 2배를 넘은 횟수, 최근 5분 최대 간격, 마지막 공백. 0.5초 이상이면 `sampler.gap` 이벤트도 기록됩니다.
 - `db_queue`, `db_dropped`: DB 기록 대기 샘플 수, DB에 기록하지 못한 샘플 수(디스크가 5분 넘게 막힌 경우)
-- `stream_dropped`: 느린 스트림 구독자에게 보내지 못하고 버린 메시지 수
+- `stream_dropped`: 느린 스트림 구독자에게 보내지 못하고 버린 메시지 수. `feed_dropped`는 recorder가 내부 구독자(front, api)에게 보내지 못한 수입니다.
 
 ### 실시간 스트림의 지연 처리
 
@@ -197,7 +208,10 @@ sudo cp packaging/wvd.service /etc/systemd/system/
 sudo systemctl enable --now wvd
 ```
 
-서비스는 별도 사용자(`DynamicUser`)와 `dialout` 그룹으로 실행되고, 데이터는 `/var/lib/wvd`에 저장됩니다. 수집 스레드나 DB 기록 스레드가 예외 처리로도 막지 못하고 끝나면 wvd는 종료 코드 70으로 종료하고, systemd가 2초 뒤 다시 시작합니다. 멈춘 값을 계속 내보내는 것보다 안전하기 때문입니다. Arch 계열은 서비스 파일의 `SupplementaryGroups`를 `uucp`로 바꾸세요. `scripts/up.sh`로 띄운 서버와 동시에 실행할 수 없습니다.
+서비스는 별도 사용자(`DynamicUser`)와 `dialout` 그룹으로 실행되고, 데이터는 `/var/lib/wvd`에, 프로세스 간 소켓은 `/run/wvd`에 저장됩니다.
+
+- recorder의 수집 스레드나 DB 기록 스레드가 예외 처리로도 막지 못하고 끝나면, recorder가 종료 코드 70으로 끝나고 `wvd`가 1초 뒤 다시 띄웁니다. 멈춘 값을 계속 내보내는 것보다 안전하기 때문입니다. 재시작 구간은 `sampler.gap` 이벤트로 남습니다.
+- 어느 프로세스든 60초 안에 5번 넘게 죽으면 `wvd` 전체가 종료 코드 70으로 끝나고, systemd가 2초 뒤 다시 시작합니다. Arch 계열은 서비스 파일의 `SupplementaryGroups`를 `uucp`로 바꾸세요. `scripts/up.sh`로 띄운 서버와 동시에 실행할 수 없습니다.
 
 ## 네트워크 보안
 
@@ -230,8 +244,11 @@ sudo systemctl enable --now wvd
 │   ├── samples.py      샘플 형식, 통계, 다운샘플링
 │   ├── store.py        메모리 버퍼, SQLite 기록 스레드, 이벤트, 세션 저장
 │   ├── events.py       폴트·경고 이벤트 생성
-│   ├── api.py          REST, WebSocket/SSE, /metrics, 인증
-│   ├── daemon.py       wvd 진입점 (옵션 처리)
+│   ├── recorder.py     recorder 프로세스 (기기, DB 기록, 피드)
+│   ├── front.py        front 프로세스 (포트, 대시보드, WS/SSE, health, 인증, api로 전달)
+│   ├── api.py          api 프로세스 (history, stats, export, 세션)
+│   ├── bus.py          프로세스 간 통신 (피드, 제어 채널)
+│   ├── daemon.py       wvd 진입점 (옵션 처리, 프로세스 감시)
 │   ├── client.py       Python 클라이언트
 │   ├── cli.py          wvctl
 │   ├── testing.py      pytest fixture
@@ -259,4 +276,6 @@ WVD_URL=http://127.0.0.1:8765 .venv/bin/pytest tests/test_cli.py   # 실행 중�
 .venv/bin/python tests/wvd_stress.py --url http://127.0.0.1:8765 --duration 600   # 실행 중인 데몬
 ```
 
-시험용 장애 주입: `WVD_TEST_FAULT=read-termios:N`(N번째 읽기마다 EIO), `loop-error:N`, `kill:N`(N번째 읽기에서 수집 스레드 종료).
+시험용 장애 주입: `WVD_TEST_FAULT=read-termios:N`(N번째 읽기마다 EIO), `loop-error:N`, `kill:N`(N번째 읽기에서 수집 스레드 종료), `db-slow:S`(DB 기록마다 S초 지연).
+
+결과에는 저장 샘플의 최대 간격과 함께, SSE로 받은 샘플의 전달 지연(수신 시각 − 샘플 시각)도 표시됩니다.

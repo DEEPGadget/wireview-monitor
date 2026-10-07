@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wvd"
-version = "1.1.0"
+version = "1.2.0"
 description = "WireView Pro II measurement daemon: REST/WebSocket API, web dashboard and CLI"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -13,7 +13,7 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.optional-dependencies]
-server = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "httpx>=0.27"]
 test = ["wvd[server]", "pytest>=8", "httpx>=0.27"]
 
 [project.scripts]

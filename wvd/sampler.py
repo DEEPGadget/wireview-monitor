@@ -52,17 +52,20 @@ class FaultInjector:
     read-termios:N  every Nth read raises termios.error (EIO), like a USB re-enumeration
     loop-error:N    every Nth loop pass raises RuntimeError outside the read
     kill:N          the Nth read ends the sampler thread
+    db-slow:S       every DB write batch first sleeps S seconds (applied by the recorder)
     """
 
-    KINDS = ("read-termios", "loop-error", "kill")
+    KINDS = ("read-termios", "loop-error", "kill", "db-slow")
 
     def __init__(self, spec: str | None):
         self.kind, self.every, self.n = None, 0, 0
         if spec:
-            kind, _, every = spec.partition(":")
+            kind, _, arg = spec.partition(":")
             if kind not in self.KINDS:
                 raise ValueError(f"unknown test fault {spec!r}, one of {self.KINDS}")
-            self.kind, self.every = kind, max(1, int(every or 1))
+            if kind == "db-slow":
+                return  # not a sampler fault
+            self.kind, self.every = kind, max(1, int(arg or 1))
 
     def tick(self, where: str) -> None:
         if self.kind is None or (where == "loop") != (self.kind == "loop-error"):

@@ -85,9 +85,12 @@ Fault 비트: 0 OTP_TCHIP · 1 OTP_TS · 2 OCP · 3 WIRE_OCP · 4 OPP · 5 CURRE
 
 <h2 id="daemon">1) 백엔드 데몬 <code>wvd</code></h2>
 <p>Python 3.10+, asyncio + FastAPI/uvicorn. 시리얼은 stdlib <code>termios</code>만 사용 (pyserial 불필요).</p>
-<pre><code>/dev/ttyACM0 ─ Transport ─ Protocol ─ Sampler(스레드) ─┬─ Store: 메모리 링버퍼 + SQLite
-   (단독 소유)                                         ├─ Event 엔진 (폴트/임계값/연결)
-                                                       └─ Hub ─ REST · WebSocket · SSE · /metrics</code></pre>
+<p><b>1.2부터 프로세스 3개</b>로 나뉜다. <code>wvd</code> 명령은 감독(supervisor)만 하고, 자식이 죽으면 1초 뒤 다시 띄운다(60초에 5번 넘으면 종료 코드 70 → systemd 재시작). 프로세스마다 GIL이 따로라서, 무거운 조회가 수집이나 실시간 스트림을 늦추지 못한다.</p>
+<pre><code>/dev/ttyACM0 ─ recorder ── Sampler(스레드) ─ Event 엔진 ─ writer ─ SQLite (샘플·이벤트 기록)
+   (단독 소유)     └─ 피드(Unix 소켓, NDJSON) ─┬─▶ front  :8765  대시보드 · WS/SSE · latest · health · /metrics
+                                               └─▶ api   (Unix 소켓) history · stats · export · 세션
+                   ◀─ 제어(Unix 소켓): 폴트 해제, 세션 변경 알림 ─ api
+   front ── 나머지 /api/* 요청을 api로 전달(프록시), 인증은 front에서</code></pre>
 <div class="table-wrap"><table>
   <tr><th>계층</th><th>역할</th></tr>
   <tr><td>Transport</td><td>raw 115200 8N1, <code>TIOCEXCL</code> 배타 오픈, sysfs로 VID:PID 0483:5740 포트 자동 탐색, 언플러그 시 자동 재연결. <code>--simulate</code> 시 가상 기기.</td></tr>

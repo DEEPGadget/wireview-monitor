@@ -168,12 +168,24 @@ def main() -> int:
             http(f"{url}/api/v1/sessions/{sid}/stop", "POST")
             http(f"{url}/api/v1/sessions/{sid}", "DELETE")
 
+        lat = {"max": 0.0, "n": 0, "over_100ms": 0}
+
         def sse():
             req = urllib.request.Request(f"{url}/api/v1/stream/sse")
             with urllib.request.urlopen(req, timeout=30) as r:
-                for _ in r:
+                kind = None
+                for raw in r:
                     if stop.is_set():
                         return
+                    line = raw.decode().rstrip("\n")
+                    if line.startswith("event: "):
+                        kind = line[7:]
+                    elif line.startswith("data: ") and kind == "sample":
+                        # Delivery delay: arrival minus sampling time (same host clock).
+                        d = time.time() - json.loads(line[6:])["ts"]
+                        lat["n"] += 1
+                        lat["max"] = max(lat["max"], d)
+                        lat["over_100ms"] += d > 0.1
 
         t_start = time.time()
         threads = []
@@ -183,6 +195,7 @@ def main() -> int:
                 load.loop("stats-1h", lambda: http(f"{url}/api/v1/sensors/stats?last=1h")),
                 load.loop("export-1h", lambda: http(f"{url}/api/v1/export?last=1h&format=csv")),
             ]
+        threads.append(load.loop("sse-latency", sse))
         if args.workload in ("full", "dashboard"):
             threads += [
                 load.loop("dashboard-sessions", dashboard_sessions),
@@ -218,6 +231,8 @@ def main() -> int:
         print(f"largest gaps (s): {[round(g, 4) for g in gaps[:5]]}")
         print(f"health: gaps_total={h.get('gaps_total')} db_dropped={h.get('db_dropped')} "
               f"stream_dropped={h.get('stream_dropped')} loop_errors={h['counters'].get('loop_errors')}")
+        print(f"stream delivery: max {lat['max'] * 1000:.1f} ms over {lat['n']} samples, "
+              f"{lat['over_100ms']} later than 100 ms")
         print(f"requests ok={load.counts} errors={load.errors}")
         ok = max_gap < args.max_gap and not h.get("db_dropped")
         print(f"\n{'PASS' if ok else 'FAIL'}: max gap {max_gap * 1000:.1f} ms (limit {args.max_gap * 1000:.0f} ms)")
