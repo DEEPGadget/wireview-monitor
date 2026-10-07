@@ -29,7 +29,7 @@ Thermal Grizzly WireView Pro II의 측정값(핀별 전압·전류, 온도, 폴�
 | 1.1.0 | USB 재연결 시 수집 스레드가 죽던 문제(C1) 수정. DB 기록을 별도 스레드로 분리해 수집이 잠금을 기다리지 않음. 샘플에 `gap_s` 추가. health 확장. export 스트리밍. 무거운 조회는 동시 2개로 제한 | 0.38 s (GIL 경합이 남음) | [docs/v1.1.html](docs/v1.1.html) |
 | 1.0.0 | 첫 릴리스: 단일 프로세스 데몬, 대시보드, REST/WS/SSE, CLI, systemd 배포 | 26.5 s (조회 중 수집 정지) | [docs/v1.0.html](docs/v1.0.html) |
 
-¹ 50 Hz에서 1시간 구간 history·stats·export, 대시보드 세션 갱신, SSE 5개를 동시에 건 부하 시험(`tests/wvd_stress.py`) 결과입니다. 1.0에서 드러난 문제의 원본 리뷰는 [reviews/wireview-monitor-issues.html](reviews/wireview-monitor-issues.html)에 있습니다.
+¹ 50 Hz에서 1시간 구간 history·stats·export, 대시보드 세션 갱신, SSE 5개를 동시에 건 부하 시험(`tests/wvd_stress.py`) 결과입니다. 1.0에서 드러난 문제(C1–C4, E1–E7)는 [docs/v1.0.html](docs/v1.0.html)에 정리돼 있습니다.
 
 ## 빠른 시작
 

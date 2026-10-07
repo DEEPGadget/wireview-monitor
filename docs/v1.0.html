@@ -104,7 +104,7 @@
 </ul>
 
 <h2 id="issues">seriesA 사용 중 드러난 문제</h2>
-<p>출처: <code>reviews/wireview-monitor-issues.html</code>. seriesA에서 wvd는 단순 기록기가 아니라 <b>자동 중단(guard)의 유일한 데이터 소스</b>였다. 그래서 수집이 멈추면 guard가 실험을 잘못 중단시키거나, 커넥터 상태를 보지 못하는 구간이 생긴다.</p>
+<p>출처: seriesA 사용 리뷰(2026-10-07). seriesA에서 wvd는 단순 기록기가 아니라 <b>자동 중단(guard)의 유일한 데이터 소스</b>였다. 그래서 수집이 멈추면 guard가 실험을 잘못 중단시키거나, 커넥터 상태를 보지 못하는 구간이 생긴다.</p>
 <div class="table-wrap"><table>
   <tr><th>ID</th><th>문제</th><th>원인 (코드에서 확인)</th></tr>
   <tr><td>C1</td><td>USB 재연결 때 수집 스레드가 죽는다. HTTP는 마지막 값을 최신 값처럼 계속 응답한다.</td><td><code>termios.error</code>는 <code>OSError</code>의 하위 클래스가 아니다(<code>issubclass</code> 결과 False). 그래서 <code>except (OSError, DeviceError)</code>를 빠져나간다.</td></tr>

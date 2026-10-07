@@ -1,58 +1,77 @@
-# Changelog
+# 변경 이력
 
-## 1.2.0 (branch v1.2)
+버전별 배경, 결정 사항, 시험 결과는 `docs/v1.0.html`, `docs/v1.1.html`, `docs/v1.2.html`에 있습니다. 아래의 C1–C4, E1–E7은 1.0을 seriesA에서 쓰며 드러난 문제 번호입니다(`docs/v1.0.html`의 "seriesA 사용 중 드러난 문제" 참고).
 
-wvd now runs as three processes under a small supervisor (`wvd` itself). Each has its own GIL, so heavy queries can no longer delay sampling or the live streams (E1).
+## 1.2.0 (태그 v1.2.0)
 
-- **recorder**: device reads, DB writes, the event engine. It publishes a live feed (NDJSON over a Unix socket) with a bounded queue per subscriber, and answers a control socket (clear faults, relay session changes).
-- **front**: the HTTP port.
-  - Serves the dashboard, WS/SSE, latest, health and metrics from the feed in memory.
-  - Checks auth for everything.
-  - Passes every other `/api/*` request (and `/docs`) to the api process over its Unix socket.
-- **api**: history, stats, export, sessions. Its ring is filled from the feed, so queries include samples not yet committed to the DB.
-- **Supervisor**: restarts a dead child after 1 s, and exits with 70 after more than 5 restarts of one child within 60 s. Children die with it (`PR_SET_PDEATHSIG`).
-- **Process restarts**:
-  - Seqs and event ids never repeat across a recorder restart: the writer keeps a high-water mark in the `meta` table.
-  - The restart pause shows as `gap_s` and as a `sampler.gap` event.
-- **Health**:
-  - New fields `processes`, `api_ok`, `recorder_status_age_s`, `feed_connected`, `feed_dropped`.
-  - A closed feed reports `down` at once.
-  - `/metrics` adds `wvd_process_restarts_total`.
-- **Stress results** (simulator, 50 Hz, 3 h DB, 60 s):
-  - Largest gap between stored samples: 20.1 ms, the sample period itself, with 100 % of samples under every workload. 1.1 measured 0.26–0.38 s and 1.0 measured 10.9–26.5 s.
-  - SSE delivery delay: at most 14 ms.
-- Packaging: `RuntimeDirectory=wvd` in the systemd unit. `down.sh` stops the supervisor when it finds the port held by the front child. New dependency: httpx.
+`wvd`가 프로세스 3개로 동작하고, `wvd` 명령 자체는 이들을 감시합니다. 프로세스마다 GIL이 따로라서 무거운 조회가 수집이나 실시간 스트림을 늦추지 못합니다(E1).
 
-## 1.1.0 (branch v1.1)
+- **recorder**: 기기 읽기, DB 기록, 이벤트 판정
+  - 실시간 피드를 Unix 소켓으로 내보냅니다(NDJSON). 구독자마다 큐 크기에 상한이 있습니다.
+  - 제어 소켓으로 폴트 해제와 세션 변경 알림을 처리합니다.
+- **front**: HTTP 포트(8765)
+  - 대시보드, WS/SSE, latest, health, metrics를 메모리에 있는 피드로 응답합니다.
+  - 인증은 모든 요청에 대해 여기서 검사합니다.
+  - 나머지 `/api/*` 요청과 `/docs`는 Unix 소켓으로 api 프로세스에 넘깁니다.
+- **api**: history, stats, export, 세션
+  - 링 버퍼를 피드로 채우므로, 아직 DB에 기록되지 않은 샘플도 조회 결과에 들어갑니다.
+- **감시(supervisor)**
+  - 죽은 자식은 1초 뒤 다시 띄웁니다.
+  - 한 자식이 60초 안에 5번 넘게 죽으면 종료 코드 70으로 끝냅니다(이후 systemd가 재시작).
+  - `wvd`가 죽으면 자식도 함께 종료됩니다(`PR_SET_PDEATHSIG`).
+- **재시작 처리**
+  - recorder가 재시작돼도 seq와 이벤트 id가 겹치지 않습니다. writer가 `meta` 테이블에 상한값을 기록합니다.
+  - 멈췄던 구간은 `gap_s`와 `sampler.gap` 이벤트로 남습니다.
+- **health**
+  - `processes`, `api_ok`, `recorder_status_age_s`, `feed_connected`, `feed_dropped`를 추가했습니다.
+  - 피드 연결이 끊기면 즉시 `down`으로 표시합니다.
+  - `/metrics`에 `wvd_process_restarts_total`을 추가했습니다.
+- **부하 시험** (50 Hz, 리뷰 6장 기준 부하)
+  - 저장 샘플 사이 최대 공백 20.2 ms, 수집률 100%: 시뮬레이터 10분, 샘플 30,193개
+  - 실제 기기 2분: 최대 공백 20.9 ms, 수집률 100%
+  - SSE 전달 지연은 최대 17.7 ms입니다.
+  - 같은 조건에서 1.1은 0.38 s, 1.0은 26.5 s였습니다.
+- **패키징**
+  - systemd 유닛에 `RuntimeDirectory=wvd`를 추가했습니다.
+  - `down.sh`는 포트를 front가 쥐고 있으면 그 부모(supervisor)를 종료합니다.
+  - 의존성에 httpx를 추가했습니다.
 
-Fixes from `reviews/wireview-monitor-issues.html` (seriesA usage, 2026-10-07).
+## 1.1.0 (태그 v1.1.0)
 
-- **C1**: the sampler survived only `OSError`. A USB re-enumeration raised `termios.error`, which killed the thread while HTTP kept serving the last value. Every exception now drops the connection and reconnects. A loop-level guard catches anything else. If the thread still ends, wvd exits with code 70 so systemd restarts it.
-- **C2, E2**: the sampler no longer takes the store lock.
-  - A writer thread owns all inserts and pruning, and prunes in 5k-row transactions.
-  - Readers use their own SQLite connections (WAL) and merge the uncommitted tail from the ring.
-  - If the DB stalls, sampling continues and drops only the DB copy after 5 minutes of backlog (`db_dropped`).
-- **C3**:
-  - Finished sessions get their stats computed once and stored (`sessions.stats`).
-  - The session list carries the stored stats, and the dashboard no longer requests 15 session details on every session event.
-- **C4**: every sample has `gap_s`, the time since the previous sample.
-  - Pauses longer than 2 periods are counted in health (`gaps_total`, `max_gap_s_5m`, `last_gap`).
-  - Pauses of 0.5 s or more are also logged as `sampler.gap` events.
-- **E3**:
-  - Exports stream in chunks with no row cap.
-  - History over 500k samples says `"truncated": true`.
-  - Stats are computed in one pass. p95 uses strided values beyond 200k samples (`p95_stride`).
-- **E4**:
-  - Each subscriber's queue holds about 5 s instead of 40 s. On overflow the backlog is dropped and a `lag` message is sent.
-  - SSE checks for disconnects once a second instead of per message.
-- **E5**: health reports `sampler_alive`, `writer_alive`, `fatal`, `last_sample_wall`, gaps, `db_queue`, `db_dropped` and `stream_dropped`. A dead thread gives `status: down`. `/sensors/latest` adds `age_s`.
-- **E6**: no auth, by decision (internal test use). Heavy queries run at most 2 at a time; the rest wait 30 s, then get 503.
-- History responses are JSON-encoded in 500-sample slices, which avoids a ~160 ms GIL hold per 20k samples and FastAPI's ~1 s `jsonable_encoder` pass.
-- Graceful shutdown is capped at 3 s, so open streams no longer hold a stop.
-- `tests/wvd_stress.py` load test; test fault injection via `WVD_TEST_FAULT`.
+1.0 사용 중 드러난 문제를 프로세스 하나 구조 안에서 고쳤습니다.
 
-Known limit (E1), fixed in 1.2: sampler and API still shared one GIL. Under continuous heavy queries the largest gap was 0.2–0.4 s (1.0: 10–26 s).
+- **C1**: 수집 스레드가 `OSError`만 잡고 있었습니다. 그래서 USB를 다시 인식할 때 나는 `termios.error`에 스레드가 죽고, HTTP는 마지막 값을 계속 응답했습니다.
+  - 이제 모든 예외에서 연결을 끊고 재연결합니다. 루프 전체도 한 번 더 감쌉니다.
+  - 그래도 스레드가 끝나면 종료 코드 70으로 끝내 systemd가 재시작하게 합니다.
+- **C2, E2**: 수집 스레드가 저장소 잠금을 쓰지 않습니다.
+  - 기록과 prune은 writer 스레드가 맡습니다. prune은 5천 행씩 나눠 지웁니다.
+  - 조회는 스레드마다 별도 SQLite 연결(WAL)로 하고, 아직 기록되지 않은 구간은 링 버퍼에서 합칩니다.
+  - DB가 막혀도 수집은 계속됩니다. 기록 대기분이 5분을 넘으면 DB 기록분만 버리고 개수를 셉니다(`db_dropped`).
+- **C3**
+  - 끝난 세션의 통계는 한 번만 계산해 저장합니다(`sessions.stats`).
+  - 세션 목록에 저장된 통계가 담겨서, 대시보드가 세션 이벤트마다 세션 15개를 다시 조회하지 않습니다.
+- **C4**: 모든 샘플에 직전 샘플과의 간격 `gap_s`가 붙습니다.
+  - 주기의 2배를 넘는 공백은 health(`gaps_total`, `max_gap_s_5m`, `last_gap`)에 집계합니다.
+  - 0.5초 이상이면 `sampler.gap` 이벤트도 남깁니다.
+- **E3**
+  - export는 묶음 단위로 스트리밍하고 행 수 상한이 없습니다.
+  - history가 50만 샘플을 넘으면 `"truncated": true`를 붙입니다.
+  - 통계는 한 번 훑어서 계산합니다. 20만 샘플을 넘으면 p95는 일정 간격으로 뽑은 값으로 구합니다(`p95_stride`).
+- **E4**
+  - 구독자 큐를 40초분에서 약 5초분으로 줄였습니다. 넘치면 밀린 것을 버리고 `lag` 메시지를 보냅니다.
+  - SSE 연결 확인은 메시지마다가 아니라 1초에 한 번 합니다.
+- **E5**
+  - health에 `sampler_alive`, `writer_alive`, `fatal`, `last_sample_wall`, 공백 통계, `db_queue`, `db_dropped`, `stream_dropped`를 추가했습니다.
+  - 스레드가 죽으면 `status: down`이 됩니다.
+  - `/sensors/latest`에 `age_s`를 추가했습니다.
+- **E6**: 사내 시험용이라 인증은 넣지 않기로 했습니다. 대신 무거운 조회는 동시에 2개까지만 실행하고, 나머지는 30초 기다린 뒤 503을 받습니다.
+- **기타**
+  - history 응답을 500개 단위로 나눠 JSON으로 만듭니다. 한 번에 만들면 2만 샘플에 GIL을 약 160 ms 잡고, FastAPI 기본 변환에도 약 1초가 걸립니다.
+  - 종료 시 대기를 3초로 제한해, 열린 스트림 때문에 종료가 늦어지지 않게 했습니다.
+  - 부하 시험 `tests/wvd_stress.py`와 장애 주입(`WVD_TEST_FAULT`)을 추가했습니다.
 
-## 1.0.0 (tag v1.0.0)
+**남은 한계(E1, 1.2에서 해결)**: 수집과 API가 GIL 하나를 나눠 썼습니다. 무거운 조회가 계속되면 최대 공백이 0.2–0.4 s였습니다(1.0은 10–26 s).
 
-Initial release (commits 253f4b7, 7700c09).
+## 1.0.0 (태그 v1.0.0)
+
+첫 릴리스입니다(커밋 253f4b7, 7700c09).
